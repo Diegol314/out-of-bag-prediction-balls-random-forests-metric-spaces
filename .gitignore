@@ -127,6 +127,14 @@ dmypy.json
 data/
 large_datasets/
 
+# Generated plots and images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+results_plots/
+
 # Simulation results (uncomment if you want to exclude them)
 # simulations_*/results/
 # simulations_*/data/
