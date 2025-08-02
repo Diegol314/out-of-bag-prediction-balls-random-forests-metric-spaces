@@ -1,3 +1,5 @@
+# Generate Type I data
+
 import sys, os; sys.path.append(os.path.dirname(os.getcwd())) 
 import numpy as np
 from scipy.special import digamma
