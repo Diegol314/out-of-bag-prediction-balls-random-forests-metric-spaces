@@ -1,100 +1,29 @@
-# Out-of-Bag Prediction Balls for Random Forests in Metric Spaces
+# Out-of-bag prediction balls for random forests in metric spaces
 
-This repository contains the implementation and reproducible code for the paper "Out-of-Bag Prediction Balls for Random Forests in Metric Spaces."
+This repository contains the code to reproduce all figures and tables from the paper "Out-of-bag prediction balls for random forests in metric spaces", as well as additional simulation results.
 
 ## Overview
 
-The code implements out-of-bag (OOB) prediction balls for random forests on various metric spaces, providing uncertainty quantification without requiring data splitting.
-
-## Quick Start
-
-1. **Install dependencies:**
-   ```bash
-   pip install -r requirements_diego.txt
-   ```
-
-2. **Run the main analysis:**
-   ```bash
-   jupyter notebook main_results.ipynb
-   ```
-
-3. **View results:**
-   All plots and tables are generated in the `results_plots/` directory.
+The code builds on [pyfrechet](https://github.com/matthieubulte/pyfrechet) (with the latest commit ID: 3e02448261f47f95649693b968a47c9a95be3e6e), which contains the implementation of random forests in metric spaces. Several additions are made to implement OOB predictions, new metric spaces, and other features required in the paper.
 
 ## Repository Structure
 
+For each metric space (`simulations_metricspace/`), there is a common structure:
+
+- Files to generate the data, under the names: `metricspace_gen_data.py` (to generate the data to train the random forests), `metricspace_gen_type_i.py` (generate data to test Type I coverage) and `metricspace_gen_type_iii.py` (generate data to test Type III coverage). 
+- The file `metricspace_results.py` generates all the results for the metric space (Type II and IV data are generated inside this file for convenience).
+- Folders: "data" and "results".
+
+In the Euclidean space, there are additional files to generate the results to compare the radii and volumes of OOB prediction balls and split-conformal balls for different dimensionalities of the response. On the hyperboloid, the data is generated using R, since the library `rotasym` is used to sample from the von Mises-Fisher distribution. For this reason, the data for Types II and IV is also generated in R using a separate script.
+
+To generate **all** the figures and tables displayed in the paper, please run `main_results.ipynb`. Even though the results and data files are reproducible, they are also included in the repository, so that the figures can be generated easily (some results are computationally expensive to obtain).
+
+Below is a simple scheme of the distribution of the library:
+
 ```
-├── main_results.ipynb          # Main notebook reproducing all paper results
-├── original_functions.py       # Core analysis and plotting functions
-├── pyfrechet/                  # Metric spaces library
-├── simulations_*/              # Raw simulation data for each metric space
-├── results_plots/              # Generated plots and visualizations
-└── requirements_diego.txt      # Python dependencies
-```
-
-## Supported Metric Spaces
-
-- **Euclidean spaces** (ℝᵈ)
-- **Unit sphere** (S²)  
-- **Hyperboloid** (H²)
-- **SPD manifolds** with three metrics:
-  - Affine Invariant
-  - Log-Euclidean  
-  - Log-Cholesky
-
-## Usage
-
-The main interface is through `original_functions.py`:
-
-```python
-from original_functions import (
-    load_coverage_results,
-    create_type_ii_plots,
-    create_radius_plots
-)
-
-# Load results for a metric space
-coverage_df = load_coverage_results('sphere')
-
-# Generate coverage plots
-create_type_ii_plots(coverage_df, 'sphere')
-
-# Generate radius analysis
-create_radius_plots(coverage_df, 'sphere')
-```
-
-## Generated Results
-
-The notebook reproduces all paper results:
-
-- **Coverage analysis:** Type I-IV coverage comparisons between OOB and split-conformal methods
-- **Radius plots:** Distribution of prediction ball radii across different parameters
-- **MSE comparisons:** Prediction accuracy analysis
-- **Geometric visualizations:** Manifold structure and regression curves
-
-## Key Features
-
-- **No data splitting required:** Uses out-of-bag samples for uncertainty quantification
-- **Multiple metric spaces:** Unified framework across Euclidean and non-Euclidean spaces
-- **Reproducible:** All results generated from included simulation data
-- **Publication-ready:** High-quality plots with consistent formatting
-
-## Dependencies
-
-Main requirements:
-- `numpy`, `pandas`, `matplotlib`, `seaborn`
-- `scikit-learn` for random forests
-- `scipy` for statistical computations
-
-See `requirements_diego.txt` for complete dependency list.
-
-## Citation
-
-```bibtex
-@article{out_of_bag_prediction_balls,
-  title={Out-of-Bag Prediction Balls for Random Forests in Metric Spaces},
-  author={[Authors]},
-  journal={[Journal]},
-  year={2025}
-}
+├── main_results.ipynb          # Main notebook reproducing all paper results.
+├── support_functions.py        # Support functions for main_results.ipynb.
+├── pyfrechet/                  # Modification and extension of pyfrechet to implement random forests in metric spaces.
+├── simulations_*/              # Raw simulation data for each metric space.
+└── requirements_diego.txt      # Python dependencies.
 ```
