@@ -4,7 +4,7 @@ This repository contains the code to reproduce all figures and tables from the p
 
 ## Overview
 
-The code builds on [pyfrechet](https://github.com/matthieubulte/pyfrechet) (with the latest commit ID: 3e02448261f47f95649693b968a47c9a95be3e6e), which contains the implementation of random forests in metric spaces. Several additions are made to implement OOB predictions, new metric spaces, and other features required in the paper.
+The code builds on [pyfrechet](https://github.com/matthieubulte/pyfrechet) (with commit ID: 3e02448261f47f95649693b968a47c9a95be3e6e), which contains the implementation of random forests in metric spaces. Several additions are made to implement OOB predictions, new metric spaces, and other features required in the paper.
 
 ## Repository Structure
 
