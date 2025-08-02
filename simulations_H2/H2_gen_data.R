@@ -11,11 +11,7 @@ f_u <- function(u, kappa, chi) {
         log(besselI(kappa * sinh(chi) * sinh(u), nu = 0, expon.scaled = TRUE)) 
   )
 }
-# sinh(chi) * sinh(u) = 1/4*(exp(u + chi) - exp(-u + chi) - exp(u - chi) + exp(-u - chi))
 
-# for (chi in seq(0,1, length = 20)){
-#   print(integrate(f_u, lower = 0, upper = 50, kappa = 200, chi = chi)$value)
-# }
 
 # Define the CDF function
 cdf <- function(ub_ls, kappa, chi) {
@@ -99,11 +95,13 @@ for (N in c(50, 100, 200, 500)) {
       hyp_points <- do.call(rbind, hyp_points_parallel)
       hyp_points <- cbind(t, hyp_points)
       
+      # Create data directory if it doesn't exist
+      dir.create("data", showWarnings = FALSE, recursive = TRUE)
+      
       # Save the data
       print(paste0("Saving data for k = ", k, (k-1) %/% 25 + 1 ))
-      write.csv(hyp_points, paste0("/Users/Diego/Desktop/Codigo/repo_edu_pyfrechet/pyfrechet/simulations_H2/data/H2_samp", 
-                                   k, "_N", N, "_kappa", kappa,
-                                   "_block_", (k-1) %/% 25 + 1 ,".csv"))
+      write.csv(hyp_points, paste0("data/H2_samp", k, "_N", N, "_kappa", kappa, "_block_", (k-1) %/% 25 + 1 ,".csv"),
+                row.names = FALSE)
       
     })
     stopCluster(cl)
@@ -149,8 +147,12 @@ for (reps_t in c(200)){
       #save the data
     }
       hyp_points = hyp_points[-1,]
-      write.csv(hyp_points, paste0("/Users/Diego/Desktop/Codigo/repo_edu_pyfrechet/pyfrechet/simulations_H2/dibujo/H2_dibujo_repst",
-                                   reps_t, "_kappa", kappa, ".csv", sep = ""))
+      
+      # Create dibujo directory if it doesn't exist
+      dir.create("dibujo", showWarnings = FALSE, recursive = TRUE)
+      
+      write.csv(hyp_points, paste0("dibujo/H2_dibujo_repst", reps_t, "_kappa", kappa, ".csv"),
+                row.names = FALSE)
   }
 }
 
@@ -194,7 +196,11 @@ for (reps_t in c(500)){
       #save the data
     }
     hyp_points = hyp_points[-1,]
-    write.csv(hyp_points, paste0("/Users/Diego/Desktop/Codigo/repo_edu_pyfrechet/pyfrechet/simulations_H2/dibujo/H2_dibujo_pball_repst.csv", sep = ""))
+    
+    # Create dibujo directory if it doesn't exist
+    dir.create("dibujo", showWarnings = FALSE, recursive = TRUE)
+    
+    write.csv(hyp_points, "dibujo/H2_dibujo_pball_repst.csv", row.names = FALSE)
   }
 }
 

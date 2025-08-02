@@ -56,11 +56,8 @@ r_hvmf = function(i, kappa, chi, theta, upper) {
 
 # Function to obtain one Type II prob estimation for a given dataset
 run_simulation <- function(sample, N, kappa) {
-  # check if paste0("/Users/Diego/Desktop/Codigo/repo_edu_pyfrechet/pyfrechet/simulations_H2/TypeIdata/estimation_", 
-  # estimation, "_N", N, "_kappa", kappa, ".csv") exists in destination folder
-
-  if (file.exists(paste0("/Users/Diego/Desktop/Codigo/repo_edu_pyfrechet/pyfrechet/simulations_H2/TypeIIdata/samp_", 
-                         sample, "_N", N, "_kappa", kappa, ".csv"))) {
+  # check if file already exists to avoid re-computation
+  if (file.exists(paste0("TypeIIdata/samp_", sample, "_N", N, "_kappa", kappa, ".csv"))) {
     return()
   }
   
@@ -87,10 +84,12 @@ run_simulation <- function(sample, N, kappa) {
   hyp_points <- do.call(rbind, hyp_points)
   hyp_points <- cbind(t, hyp_points)
   
+  # Create TypeIIdata directory if it doesn't exist
+  dir.create("TypeIIdata", showWarnings = FALSE, recursive = TRUE)
+  
   # Save the data
-  write.csv(hyp_points, paste0("/Users/Diego/Desktop/Codigo/repo_edu_pyfrechet/pyfrechet/simulations_H2/TypeIIdata/samp_",
-                               sample, "_N_", N, "_kappa",
-                               kappa, ".csv", sep = ""))
+  write.csv(hyp_points, paste0("TypeIIdata/samp_", sample, "_N_", N, "_kappa", kappa, ".csv"),
+            row.names = FALSE)
 }
 
 # Generate the data
@@ -122,39 +121,4 @@ for (N in c(50, 100, 200, 500)){
     stopCluster(cl)
   }
 }
-
-#hyp_points = matrix(0, nrow = length(chi), ncol = 3)
-#for(i in seq_along(chi)) {
-#  aux = runif(1, min=0, max = 0.98)
-#  u = quantile_function(p = aux, kappa=kappa, chi=chi[i], upper=upper)
-#  e_w = r_vMF(1, mu = c(cos(theta[1]), sin(theta[1])), kappa = kappa*sinh(chi[i])*sinh(u))
-#  hyp_points[i,] = c(cosh(u), sinh(u)*e_w)
-#}
-
-#add t to the first column of hyp_points
-# hyp_points = cbind(t, hyp_points)
-
-# Convert the result into a matrix
-# hyp_points <- do.call(rbind, hyp_points_parallel)
-# Add 't' to the first column of hyp_points
-# hyp_points = cbind(t, hyp_points)
-
-# Stop the cluster after use
-# stopCluster(cl)
-
-#save the data
-
-##
-
-
-# Set up the cluster
-# cl <- makeCluster(num_cores)
-# 
-# # Export necessary functions and variables to the cluster
-# clusterExport(cl, c("f_u", "cdf", "quantile_function", "r_vMF", "mu", "kappa", "upper", "chi", "theta"))
-# 
-# hyp_points_parallel <- parLapply(cl, seq_along(chi), function(i) {
-#   u = quantile_function(p = aux, kappa=kappa, chi=chi[i], upper=upper)
-#   e_w = r_vMF(1, mu = c(cos(theta[1]), sin(theta[1])), kappa = kappa * sinh(chi[i]) * sinh(u))
-#   return(c(cosh(u), sinh(u) * e_w))
 

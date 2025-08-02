@@ -50,8 +50,8 @@ r_u = function(n, quantile_values) {
 
 
 # GEN SAMPLES FUNCTION
-r_hvmf = function(i, kappa, chi, theta, upper) {
-  quantile_values <- calculate_qvals(kappa = kappa, chi = chi[i], upper = upper)
+r_hvmf = function(i, kappa, chi, theta, upper, quantile_values) {
+  # quantile_values <- calculate_qvals(kappa = kappa, chi = chi[i], upper = upper)
   u = r_u(1, quantile_values)
   e_w = r_vMF(1, mu = c(cos(theta[i]), sin(theta[i])), kappa = 
                 kappa*sinh(chi[i])*sinh(u)
@@ -64,72 +64,25 @@ set.seed(1)
 upper = 3
 mu = c(1/sqrt(2), 1/sqrt(2))
 
+# Generate chi values
 
-# 
-# # Function to run a single estimation
-# run_simulation <- function(estimation, N, kappa) {
-#   # check if file exists in destination folder
-#   
-#   #if (file.exists(paste0("/Users/Diego/Desktop/Codigo/repo_edu_pyfrechet/pyfrechet/simulations_H2/TypeIdata/estimation_", 
-#    #                      estimation, "_N", N, "_kappa", kappa, ".csv"))) {
-#     #return()
-#   #}
-#       t <- rnorm(1000, mean = 0, sd = 1/4)
-#       
-#       x_curve <- cosh(abs(t))
-#       y_curve <- sinh(abs(t)) * sign(t) * mu[1]
-#       z_curve <- sinh(abs(t)) * sign(t) * mu[2]
-#       
-#       # Create dataframe
-#       m_df <- data.frame(x_curve, y_curve, z_curve)
-#       
-#       # Compute chi and theta
-#       chi <- acosh(m_df[,1])
-#       theta <- ifelse(sign(t) >= 0, acos(m_df[,2] / sinh(chi)), 
-#                       2 * pi - acos(m_df[,2] / sinh(chi)))
-#       
-#       hyp_points <- lapply(seq_along(chi), function(i) r_hvmf(i, kappa, chi, theta, upper))
-#       
-#       # Convert list to matrix and add 't' column
-#       hyp_points <- do.call(rbind, hyp_points)
-#       hyp_points <- cbind(t, hyp_points)
-#       
-#       # Save the data
-#       write.csv(hyp_points, paste0("/Users/Diego/Desktop/Codigo/repo_edu_pyfrechet/pyfrechet/simulations_H2/TypeIdata/estimation_", 
-#                                    estimation, "_N", N, "_kappa", kappa, ".csv"))
-#     
-# }
-# 
-# 
-# for (N in c(50, 100, 200, 500)) {
-#   for (kappa in c(50, 200)) {
-#     # Export necessary variables and functions to the cluster
-#     # Set up the cluster outside of parLapply
-#     num_cores <- parallel::detectCores() - 4  # Use all but one core
-#     cl <- parallel::makeCluster(num_cores)
-#     
-#     # Export necessary variables and functions to the cluster
-#     clusterEvalQ(cl,{ 
-#       library(rotasym) 
-#       library(pracma) 
-#       library(gbutils) 
-#     })
-#     clusterExport(cl, c("f_u", "cdf", "r_u", "quantile_interpolation",
-#                         "calculate_qvals", "mu", "r_vMF", "r_hvmf", 
-#                         "upper", "N", "kappa"))
-#   
-#     # Run the simulations in parallel
-#     parLapply(cl, 1:500, run_simulation, N = N, kappa = kappa)
-#     # Stop the cluster when finished
-#     stopCluster(cl)
-#   }
-# }
-# 
+t <- rep(qnorm(0.25, mean = 0, sd = 1/4), 1000)
+
+x_curve <- cosh(abs(t))
+y_curve <- sinh(abs(t)) * sign(t) * mu[1]
+z_curve <- sinh(abs(t)) * sign(t) * mu[2]
+# Create dataframe
+m_df <- data.frame(x_curve, y_curve, z_curve)
+# Compute chi and theta
+chi <- acosh(m_df[,1])
+
+quantile_values_50 <- calculate_qvals(kappa = 50, chi = chi[1], upper = upper)
+quantile_values_200 <- calculate_qvals(kappa = 200, chi = chi[1], upper = upper)
 
 
 
-run_simulation <- function(N, kappa) {
-  t <- rnorm(1000, mean = 0, sd = 1/4)
+run_simulation <- function(N, kappa, quantile_values_50, quantile_values_200) {
+  t <- rep(qnorm(0.25, mean = 0, sd = 1/4), 1000)
   
   x_curve <- cosh(abs(t))
   y_curve <- sinh(abs(t)) * sign(t) * mu[1]
@@ -145,6 +98,13 @@ run_simulation <- function(N, kappa) {
   num_cores <- parallel::detectCores() - 2  # Leave 2 cores free
   cl <- parallel::makeCluster(num_cores)
   
+  if (kappa == 50) {
+    quantile_values <- quantile_values_50
+  } else {
+    quantile_values <- quantile_values_200
+  }
+  
+  
   # Load required libraries and export variables/functions
   parallel::clusterEvalQ(cl, {
     library(rotasym)
@@ -153,12 +113,12 @@ run_simulation <- function(N, kappa) {
   })
   
   parallel::clusterExport(cl, varlist = c("f_u", "cdf", "r_u", "quantile_interpolation",
-                                                                 "calculate_qvals", "mu", "r_vMF", "r_hvmf", 
-                                                                 "upper", "N", "kappa", "chi"), envir = environment())
+                                          "calculate_qvals", "mu", "r_vMF", "r_hvmf", 
+                                          "upper", "N", "kappa", "chi"), envir = environment())
   
   # Parallel loop: each core computes one r_hvmf sample for index i
   hyp_points <- parallel::parLapply(cl, seq_along(chi), function(i) {
-    r_hvmf(i, kappa, chi, theta, upper)
+    r_hvmf(i, kappa, chi, theta, upper, quantile_values)
   })
   
   parallel::stopCluster(cl)
@@ -167,9 +127,11 @@ run_simulation <- function(N, kappa) {
   hyp_points <- do.call(rbind, hyp_points)
   hyp_points <- cbind(t, hyp_points)
   
+  # Create TypeIIIdata directory if it doesn't exist
+  dir.create("TypeIIIdata", showWarnings = FALSE, recursive = TRUE)
+  
   write.csv(hyp_points,
-            paste0("/Users/Diego/Desktop/Codigo/minimal_pyfrechet/min_pyfrechet/simulations_H2/TypeIdata/H2_type_i_N", 
-                   N, "_kappa", kappa, ".csv"),
+            paste0("TypeIIIdata/H2_type_iii_N", N, "_kappa", kappa, ".csv"),
             row.names = FALSE)
 }
 
@@ -177,7 +139,7 @@ run_simulation <- function(N, kappa) {
 
 for (N in c(50, 100, 200, 500)) {
   for (kappa in c(50, 200)) {
-    run_simulation(N, kappa)
+    run_simulation(N, kappa, quantile_values_50, quantile_values_200)
   }
 }
 

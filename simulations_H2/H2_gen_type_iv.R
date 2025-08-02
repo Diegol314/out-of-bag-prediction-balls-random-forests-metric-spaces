@@ -62,10 +62,8 @@ r_hvmf = function(i, kappa, chi, theta, upper, quantile_values) {
 
 # Function to obtain one Type II prob estimation for a given dataset
 run_simulation <- function(sample, N, kappa) {
-  # check if file exists in destination folder
-  
-  if (file.exists(paste0("/Users/Diego/Desktop/Codigo/repo_edu_pyfrechet/pyfrechet/simulations_H2/TypeIVdata/samp_", 
-                         sample, "_N_", N, "_kappa", kappa, ".csv"))) {
+    # check if file already exists to avoid re-computation
+  if (file.exists(paste0("TypeIVdata/samp_", sample, "_N_", N, "_kappa", kappa, ".csv"))) {
     return()
   }
   
@@ -99,10 +97,12 @@ run_simulation <- function(sample, N, kappa) {
   hyp_points <- do.call(rbind, hyp_points)
   hyp_points <- cbind(t, hyp_points)
   
+  # Create TypeIVdata directory if it doesn't exist
+  dir.create("TypeIVdata", showWarnings = FALSE, recursive = TRUE)
+  
   # Save the data
-  write.csv(hyp_points, paste0("/Users/Diego/Desktop/Codigo/repo_edu_pyfrechet/pyfrechet/simulations_H2/TypeIVdata/samp_",
-                               sample, "_N_", N, "_kappa",
-                               kappa, ".csv", sep = ""))
+  write.csv(hyp_points, paste0("TypeIVdata/samp_", sample, "_N_", N, "_kappa", kappa, ".csv"),
+            row.names = FALSE)
 }
 
 
@@ -146,74 +146,3 @@ for (N in c(50, 100, 200, 500)){
   }
 }
 
-
-
-# # Function to run a single estimation
-# run_simulation <- function(estimation, N, kappa, quantile_values_50, quantile_values_200) {
-#   
-#   # check if file exists in destination folder
-#   if (file.exists(paste0("/Users/Diego/Desktop/Codigo/repo_edu_pyfrechet/pyfrechet/simulations_H2/TypeIIIdata/estimation_", 
-#                          estimation, "_N", N, "_kappa", kappa,".csv"))) {
-#     return()
-#   }
-#   t <- rep(qnorm(0.25, mean = 0, sd = 1/4), 1000)
-#   
-#   x_curve <- cosh(abs(t))
-#   y_curve <- sinh(abs(t)) * sign(t) * mu[1]
-#   z_curve <- sinh(abs(t)) * sign(t) * mu[2]
-#   
-#   # Create dataframe
-#   m_df <- data.frame(x_curve, y_curve, z_curve)
-#   
-#   # Compute chi and theta
-#   chi <- acosh(m_df[,1])
-#   theta <- ifelse(sign(t) >= 0, acos(m_df[,2] / sinh(chi)), 
-#                   2 * pi - acos(m_df[,2] / sinh(chi)))
-#   
-#   if (kappa == 50) {
-#     quantile_values <- quantile_values_50
-#   } else {
-#     quantile_values <- quantile_values_200
-#   }
-#   
-#   hyp_points <- lapply(seq_along(chi), 
-#                        function(i) r_hvmf(i, kappa, chi, theta, upper, 
-#                                           quantile_values)
-#                        )
-#   
-#   # Convert list to matrix and add 't' column
-#   hyp_points <- do.call(rbind, hyp_points)
-#   hyp_points <- cbind(t, hyp_points)
-#   
-#   # Save the data
-#   write.csv(hyp_points, paste0("/Users/Diego/Desktop/Codigo/repo_edu_pyfrechet/pyfrechet/simulations_H2/TypeIIIdata/estimation_", 
-#                                estimation, "_N", N, "_kappa", kappa, ".csv"))
-# }
-# 
-# for (N in c(50, 100, 200, 500)) {
-#   for (kappa in c(50, 200)) {
-#     # Export necessary variables and functions to the cluster
-#     # Set up the cluster outside of parLapply
-#     num_cores <- parallel::detectCores() - 4  # Use all but one core
-#     cl <- parallel::makeCluster(num_cores)
-#     
-#     # Export necessary variables and functions to the cluster
-#     clusterEvalQ(cl,{ 
-#       library(rotasym) 
-#       library(pracma) 
-#       library(gbutils) 
-#     })
-#     clusterExport(cl, c("f_u", "cdf", "r_u", "quantile_interpolation",  "quantile_values_50", 
-#                         "quantile_values_200" ,"mu", "r_vMF", "r_hvmf", 
-#                         "upper", "N", "kappa"))
-#     
-#     # Run the simulations in parallel
-#     parLapply(cl, 1:500, run_simulation, N = N, kappa = kappa, 
-#               quantile_values_50 = quantile_values_50, 
-#               quantile_values_200 = quantile_values_200
-#               )
-#     
-#     # Stop the cluster when finished
-#     stopCluster(cl)
-#   }
-# }
