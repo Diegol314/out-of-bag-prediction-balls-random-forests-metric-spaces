@@ -1289,6 +1289,8 @@ def sphere_H2_type_iv_analysis(pb_coverage_df, save_individual=True):
 
 def sphere_H2_radius_analysis(pb_coverage_df, space='sphere', save_individual=True):
     """Create radius boxplots for sphere/hyperboloid data."""
+    import matplotlib.patches as mpatches
+    
     # Split the OOB_quantile array by alpha levels
     radius_alpha_01 = pb_coverage_df.copy()
     radius_alpha_05 = pb_coverage_df.copy()
@@ -1466,7 +1468,12 @@ def sphere_H2_radius_analysis(pb_coverage_df, space='sphere', save_individual=Tr
             ax.set_ylabel('Radius', fontsize=17)
             ax.tick_params(axis='x', labelsize=17)
             ax.tick_params(axis='y', labelsize=17)
+            
+            # Create proper legend handles for individual plots
+            import matplotlib.patches as mpatches
             legend_handles = [
+                mpatches.Patch(color=palette[j], label=f'Train size: {train_sizes[j]}') 
+                for j in range(len(train_sizes))
             ]
             ax.legend(handles=legend_handles, loc='upper right', fontsize=13)
             ax.grid(False)
