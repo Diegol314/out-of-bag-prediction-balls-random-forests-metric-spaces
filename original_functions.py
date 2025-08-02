@@ -472,8 +472,10 @@ def euclidean_type_iii_analysis(coverage_df):
     """Generate Type III tables"""
     return euclidean_type_analysis(coverage_df, coverage_type='iii')
 
-def euclidean_type_ii_analysis(coverage_df):
+def euclidean_type_ii_analysis(coverage_df, save_individual=True):
     """Generate Type II plots"""
+    import matplotlib.lines as mlines
+    
     train_sizes = [50, 100, 200, 500]
     alpha_levels = [0.01, 0.05, 0.1]
     sigma_values = [0.9, 1.7]
@@ -558,6 +560,80 @@ def euclidean_type_ii_analysis(coverage_df):
             ax.legend(handles=legend_handles, loc='lower right', fontsize=13)
 
         plt.show()
+        
+        # Save individual plots if requested
+        if save_individual:
+            output_dir = ROOT_DIR / "results_plots"
+            output_dir.mkdir(exist_ok=True)
+            
+            # Create individual plots for each alpha level
+            for alpha_idx, alpha_level in enumerate(alpha_levels):
+                sigma_data = ii_coverage_dfs[alpha_level]
+                
+                # Create individual figure
+                fig_individual, ax = plt.subplots(1, 1, figsize=(7, 7), facecolor="white")
+                
+                # Extract data for each training size
+                pb_sigma_boxplot_data = [sigma_data[sigma_data['train_size'] == size]['pb_ii_cov_alpha'].values for size in train_sizes]
+                conf_sigma_boxplot_data = [sigma_data[sigma_data['train_size'] == size]['conf_ii_cov_alpha'].values for size in train_sizes]
+
+                # Create boxplots with adjusted positions
+                pb_positions_sigma = np.array(range(len(train_sizes))) - 0.2
+                conf_positions_sigma = np.array(range(len(train_sizes))) + 0.2
+
+                ax.boxplot(pb_sigma_boxplot_data, positions=pb_positions_sigma, widths=0.3, notch=False, 
+                           boxprops=dict(color="#000000", linestyle='-', linewidth=1.5), 
+                           whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                           flierprops=dict(marker='o', markersize=1, linestyle='none'), 
+                           medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False, showfliers=False)
+                           
+                ax.boxplot(conf_sigma_boxplot_data, positions=conf_positions_sigma, widths=0.3, notch=False, 
+                           boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                           whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                           flierprops=dict(marker='o', markersize=1, linestyle='none'), 
+                           medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False, showfliers=False)
+
+                # Scatter plot
+                pb_palette_sigma = ['#ee6100', 'g', 'b', 'y']
+                conf_palette_sigma = ['#ee6100', 'g', 'b', 'y']
+
+                for i, size in enumerate(train_sizes):
+                    pb_xs_sigma = np.random.normal(pb_positions_sigma[i], 0.04, len(pb_sigma_boxplot_data[i]))
+                    conf_xs_sigma = np.random.normal(conf_positions_sigma[i], 0.04, len(conf_sigma_boxplot_data[i]))
+
+                    ax.scatter(pb_xs_sigma, pb_sigma_boxplot_data[i], alpha=0.2, color = pb_palette_sigma[i])
+                    ax.scatter(conf_xs_sigma, conf_sigma_boxplot_data[i], alpha=0.2, color = conf_palette_sigma[i], marker='^')
+
+                sns.despine(bottom=True)  # Remove right and top axis lines
+                sns.set_style("whitegrid")
+                ax.set_xticks(range(len(train_sizes)))
+                ax.set_xticklabels([str(size) for size in train_sizes], fontsize=17)
+
+                if alpha_level == 0.01:
+                    ax.set_ylim(0.86, 1.001)
+                elif alpha_level == 0.05:
+                    ax.set_ylim(0.75, 1.001)
+                else:
+                    ax.set_ylim(0.5, 1)
+
+                ax.set_xlabel('Training sample size', fontsize=17)
+                ax.set_ylabel('Coverage', fontsize=17)
+                ax.tick_params(labelsize=17)
+                ax.axhline(y=1-alpha_level, color='black', linestyle='dashed')
+                ax.grid(False)
+
+                legend_handles = []
+                legend_handles.append(mlines.Line2D([], [], color='gray', marker='o', linestyle='none', markersize=10, label='OOB prediction balls'))
+                legend_handles.append(mlines.Line2D([], [], color='gray', marker='^', linestyle='none', markersize=10, label='Split-conformal'))
+
+                ax.legend(handles=legend_handles, loc='lower right', fontsize=13)
+                
+                fig_individual.tight_layout()
+                
+                # Save the individual plot
+                filename = output_dir / f'euclidean_type_ii_coverage_sigma_{str(sigma).replace(".", "")}_alpha_{str(alpha_level)[2:]}.png'
+                fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=75, transparent=True)
+                plt.close(fig_individual)  # Close individual figure to free memory
 
     fig.tight_layout()
 
@@ -1781,7 +1857,7 @@ def spd_type_i_analysis(SPD_coverage_df):
 
     return ai_latex, le_latex, lc_latex
 
-def spd_type_ii_analysis(SPD_coverage_df):
+def spd_type_ii_analysis(SPD_coverage_df, save_individual=True):
     """Generate Type II plots"""
     ai_SPD_coverage_df = SPD_coverage_df[['train_size', 'df', 'ai_i_cov', 'ai_ii_cov', 'ai_iii_cov', 'ai_iv_cov', 'ai_OOB_quantile']]
     lc_SPD_coverage_df = SPD_coverage_df[['train_size', 'df', 'lc_i_cov', 'lc_ii_cov', 'lc_iii_cov', 'lc_iv_cov', 'lc_OOB_quantile']]
@@ -2087,7 +2163,7 @@ def spd_type_ii_analysis(SPD_coverage_df):
 # TYPE IV AND MISSING TYPE III ANALYSIS FUNCTIONS
 # ================================
 
-def euclidean_type_iv_analysis(coverage_df, sigma_value='0.9'):
+def euclidean_type_iv_analysis(coverage_df, sigma_value='0.9', save_individual=True):
     """Generate Type IV plots for Euclidean distance"""
     train_sizes = [50, 100, 200, 500]
     alpha_levels = [0.01, 0.05, 0.1]
@@ -2103,6 +2179,10 @@ def euclidean_type_iv_analysis(coverage_df, sigma_value='0.9'):
         elif sigma == 1.7:
             print(" Sigma = √3")
         fig, axes = plt.subplots(1, 3, figsize=(21, 7), facecolor="white")
+        
+        # Store data for individual plots
+        iv_coverage_dfs = {}
+        
         # Create plots for each alpha level 
         for alpha_idx, alpha_level in enumerate(alpha_levels):
             # Create separate dataframes for each sigma and alpha level
@@ -2110,6 +2190,7 @@ def euclidean_type_iv_analysis(coverage_df, sigma_value='0.9'):
             
             sigma_data['pb_iv_cov_alpha'] = sigma_data['pb_iv_cov'].apply(lambda x: x[alpha_idx])
             sigma_data['conf_iv_cov_alpha'] = sigma_data['conf_iv_cov'].apply(lambda x: x[alpha_idx])
+            iv_coverage_dfs[alpha_level] = sigma_data
 
             ax = axes[alpha_idx]
 
@@ -2168,6 +2249,80 @@ def euclidean_type_iv_analysis(coverage_df, sigma_value='0.9'):
 
             ax.legend(handles=legend_handles, loc='lower right', fontsize=13)
         plt.show()
+        
+        # Save individual plots if requested
+        if save_individual:
+            output_dir = ROOT_DIR / "results_plots"
+            output_dir.mkdir(exist_ok=True)
+            
+            # Create individual plots for each alpha level
+            for alpha_idx, alpha_level in enumerate(alpha_levels):
+                sigma_data = iv_coverage_dfs[alpha_level]
+                
+                # Create individual figure
+                fig_individual, ax = plt.subplots(1, 1, figsize=(7, 7), facecolor="white")
+                
+                # Extract data for each training size
+                pb_sigma_boxplot_data = [sigma_data[sigma_data['train_size'] == size]['pb_iv_cov_alpha'].values for size in train_sizes]
+                conf_sigma_boxplot_data = [sigma_data[sigma_data['train_size'] == size]['conf_iv_cov_alpha'].values for size in train_sizes]
+
+                # Create boxplots with adjusted positions
+                pb_positions_sigma = np.array(range(len(train_sizes))) - 0.2
+                conf_positions_sigma = np.array(range(len(train_sizes))) + 0.2
+
+                ax.boxplot(pb_sigma_boxplot_data, positions=pb_positions_sigma, widths=0.3, notch=False, 
+                           boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                           whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                           flierprops=dict(marker='o', markersize=1, linestyle='none'), 
+                           medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False, showfliers=False)
+                           
+                ax.boxplot(conf_sigma_boxplot_data, positions=conf_positions_sigma, widths=0.3, notch=False, 
+                           boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                           whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                           flierprops=dict(marker='o', markersize=1, linestyle='none'), 
+                           medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False, showfliers=False)
+
+                # Scatter plot
+                pb_palette_sigma = ['#ee6100', 'g', 'b', 'y']
+                conf_palette_sigma = ['#ee6100', 'g', 'b', 'y']
+
+                for i, size in enumerate(train_sizes):
+                    pb_xs_sigma = np.random.normal(pb_positions_sigma[i], 0.04, len(pb_sigma_boxplot_data[i]))
+                    conf_xs_sigma = np.random.normal(conf_positions_sigma[i], 0.04, len(conf_sigma_boxplot_data[i]))
+
+                    ax.scatter(pb_xs_sigma, pb_sigma_boxplot_data[i], alpha=0.2, color = pb_palette_sigma[i])
+                    ax.scatter(conf_xs_sigma, conf_sigma_boxplot_data[i], alpha=0.2, color = conf_palette_sigma[i], marker='^')
+
+                sns.despine(bottom=True)  # Remove right and top axis lines
+                sns.set_style("whitegrid")
+                ax.set_xticks(range(len(train_sizes)))
+                ax.set_xticklabels([str(size) for size in train_sizes], fontsize=17)
+
+                if alpha_level == 0.01:
+                    ax.set_ylim(0.86, 1.001)
+                elif alpha_level == 0.05:
+                    ax.set_ylim(0.75, 1.001)
+                else:
+                    ax.set_ylim(0.5, 1)
+
+                ax.set_xlabel('Training sample size', fontsize=17)
+                ax.set_ylabel('Coverage', fontsize=17)
+                ax.tick_params(labelsize=17)
+                ax.axhline(y=1-alpha_level, color='black', linestyle='dashed')
+                ax.grid(False)
+
+                legend_handles = []
+                legend_handles.append(mlines.Line2D([], [], color='gray', marker='o', linestyle='none', markersize=10, label='OOB prediction balls'))
+                legend_handles.append(mlines.Line2D([], [], color='gray', marker='^', linestyle='none', markersize=10, label='Split-conformal'))
+
+                ax.legend(handles=legend_handles, loc='lower right', fontsize=13)
+                
+                fig_individual.tight_layout()
+                
+                # Save the individual plot
+                filename = output_dir / f'euclidean_type_iv_coverage_sigma_{str(sigma).replace(".", "")}_alpha_{str(alpha_level)[2:]}.png'
+                fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=75, transparent=True)
+                plt.close(fig_individual)  # Close individual figure to free memory
 
     fig.tight_layout()
 
@@ -2532,7 +2687,7 @@ def create_spd_type_iii_tables(coverage_df, df_value='3'):
         'le': [le_iii_coverage_df_alpha_01, le_iii_coverage_df_alpha_05, le_iii_coverage_df_alpha_1]
     }
 
-def spd_type_iv_analysis(SPD_coverage_df):
+def spd_type_iv_analysis(SPD_coverage_df, save_individual=True):
     """Generate Type IV plots"""
     ai_SPD_coverage_df = SPD_coverage_df[['train_size', 'df', 'ai_i_cov', 'ai_ii_cov', 'ai_iii_cov', 'ai_iv_cov', 'ai_OOB_quantile']]
     lc_SPD_coverage_df = SPD_coverage_df[['train_size', 'df', 'lc_i_cov', 'lc_ii_cov', 'lc_iii_cov', 'lc_iv_cov', 'lc_OOB_quantile']]
@@ -2831,7 +2986,7 @@ def spd_type_iv_analysis(SPD_coverage_df):
     plt.show()
     fig.tight_layout()
 
-def spd_radius_analysis(SPD_coverage_df):
+def spd_radius_analysis(SPD_coverage_df, save_individual=True):
     """Create radius boxplots for SPD data for all three metrics."""
     print("=== SPD Radius Analysis ===")
     
