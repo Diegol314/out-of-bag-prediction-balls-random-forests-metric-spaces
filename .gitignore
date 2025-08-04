@@ -1,6 +1,8 @@
 # Results plots
 results_plots/
 
+# LaTeX source files
+*.tex
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
