@@ -1,0 +1,18 @@
+\begin{table}[hpbt]
+\setlength{\tabcolsep}{1.5pt}
+\centering
+\begin{tabular}{lccccccccc|c|ccc}
+\toprule
+\multicolumn{1}{c}{} & \multicolumn{9}{c}{Oblate ($S_{1, \lambda}$)} &  \multicolumn{1}{c}{Sphere} & \multicolumn{3}{c}{Prolate ($S_{\lambda, 1}$)} \\
+ \cmidrule(lr){2-10} \cmidrule(lr){11-11}  \cmidrule(lr){12-14}
+\multicolumn{1}{c}{$\lambda$} & $0.1$ & $0.2$ & $0.3$ & $0.4$ & $\mathbf{0.5}$ & $0.6$ & $0.7$ & $0.8$ & $0.9$ & $1.0$ & $1$ & $1$ & $1$ \\
+\midrule
+$\Delta_{\mathrm{MSE}}$ & $27.2$ & $11.2$ & $4.0$ & $2.3$ & $1.1$ & $0.7$ & $0.4$ & $0.2$ & $0.2$ & $0.0$ & $0.2$ & $0.6$ & $0.8$ \\
+$\Delta_{\mathrm{area}}$ & $109.6$ & $18.9$ & $-6.5$ & $-15.3$ & $\mathbf{-19.1}$ & $-17.7$ & $-15.1$ & $-10.7$ & $-5.1$ & $0.0$ & $4.1$ & $12.2$ & $24.6$ \\
+Coverage & $90.3$ & $90.2$ & $90.1$ & $90.1$ & $89.6$ & $90.6$ & $90.4$ & $90.2$ & $90.2$ & $90.3$ & $90.2$ & $90.3$ & $90.0$ \\
+$p_{\mathrm{MSE}}$ & $0.0000000000$ & $0.0000000000$ & $0.0054149243$ & $0.1260519183$ & $0.4661524467$ & $0.7788942125$ & $0.9129513746$ & $1.0000000000$ & $1.0000000000$ & --- & $0.9073607039$ & $0.3961855621$ & $0.3961855621$ \\
+$p_{\mathrm{area}}$ & $1.0000000000$ & $1.0000000000$ & $0.0000000000$ & $0.0000000000$ & $0.0000000000$ & $0.0000000000$ & $0.0000000000$ & $0.0000000000$ & $0.0000000000$ & --- & $1.0000000000$ & $1.0000000000$ & $1.0000000000$ \\
+\bottomrule
+\end{tabular}
+\caption{For each $\lambda$ specification, the errors, areas, and coverages were calculated on the test points of cycles $21$--$23$, and the reported values are weighted means across the three cycles, with weights proportional to the number of test points on each cycle. The areas correspond to OOB balls centered on the test points (measured in $100 \times R_\odot^2$). The relative MSE difference $\Delta_{\mathrm{MSE}}$ and the relative mean area difference $\Delta_{\mathrm{area}}$ (both in $\%$) were calculated with respect to the balls on the sphere. The reported coverage corresponds to Type II (in \%) for $\alpha=0.10$. The $p$-value of the two-sided paired $t$-test with null hypothesis $H_0: \mathrm{MSE}_{\mathbb{S}^2} = \mathrm{MSE}_{S_{1, \lambda}}$ is $p_{\mathrm{MSE}}$. For $p_{\mathrm{area}}$, we considered a one-sided paired $t$-test with alternative hypothesis $H_1: \mathrm{area}_{\mathbb{S}^2} > \mathrm{area}_{S_{1, \lambda}}$, to test the equality of mean areas.}\label{tab:spheroid_metrics}
+\end{table}
