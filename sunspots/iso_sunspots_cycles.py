@@ -59,7 +59,7 @@ def custom_GCV(M_response, structure, X_train, y_train, param_grid, seed=5, n_sp
                         min_split_size=min_split_size, mtry=mtry)
             forest = BaggedRegressor(estimator=base, n_estimators=200,
                                      bootstrap_fraction=1, bootstrap_replace=True,
-                                     seed=seed, n_jobs=12)
+                                     seed=seed, n_jobs=-1)
             forest.fit(X_tr, y_tr)
             preds = forest.predict(X_val)
             error = mse(y_val, preds)
@@ -84,7 +84,7 @@ def custom_GCV(M_response, structure, X_train, y_train, param_grid, seed=5, n_sp
                       min_split_size=best['min_split_size'], mtry=best['mtry'])
     final_forest = BaggedRegressor(estimator=final_tree, n_estimators=200,
                                    bootstrap_fraction=1, bootstrap_replace=True,
-                                   seed=seed, n_jobs=12)
+                                   seed=seed, n_jobs=-1)
     final_forest.fit(X_train, y_train_metric)
 
     return final_forest, best, cv_results
@@ -158,9 +158,6 @@ def task(cyc):
     # Predictions
     results['iso_preds'] = iso_preds.data
 
-    # MSEs
-    results['mse_iso_iso_geo'] = mse(MetricData(Spheroid(a=1, c=1), y_test), MetricData(Spheroid(a=1, c=1), iso_preds.data))
-
     # OOB quantiles
     results['oob_quantile_iso_iso'] = iso_oob_quantile
 
@@ -172,30 +169,16 @@ def task(cyc):
     results['area_iso_iso'] = [area_pred_ball(M, r, 5000) for r in iso_oob_quantile]
 
     # Save
-    output_path = f'sunspots/results/new_results_cycle_{cyc}.npy'
+    output_dir = 'sunspots/results'
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = f'{output_dir}/new_results_cycle_{cyc}.npy'
     np.save(output_path, results)
     print("Sample saved to", output_path)
 
 # with tqdm_joblib(tqdm(total=total_files)) as progress_bar:
 #     Parallel(n_jobs=10)(delayed(task)(cyc) for cyc in file_list)
 
-blocks = [
-    [23],
-    [21],
-    [22],
-    [17, 12],
-    [16, 13],
-    [15, 14],
-    [18],
-    [19],
-    [20]
-]
-
-def process_block(block):
-    # Process ONE block in parallel using 10 cores
-    for cyc in block:
-        task(cyc)
-
-for block in blocks:
-    print(f"Processing block: {block}")
-    process_block(block)
+if __name__ == "__main__":
+    cycle_number = int(sys.argv[1])
+    print(f"Processing cycle {cycle_number}")
+    task(cycle_number)
