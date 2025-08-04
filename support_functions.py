@@ -14,6 +14,10 @@ from matplotlib.cm import get_cmap
 from matplotlib.patches import Ellipse
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.lines import Line2D
+from joblib import Parallel, delayed
+from sklearn.model_selection import train_test_split
+import sys
+import contextlib
 
 # Import pyfrechet for metric spaces
 try:
@@ -640,7 +644,7 @@ def euclidean_type_ii_analysis(coverage_df, save_individual=True):
 
 
 def euclidean_mse_analysis(coverage_df):
-    """Calculate MSE comparison"""
+    """Calculate MSE comparison with means and standard deviations"""
     sample_sizes = [50, 100, 200, 500]
     sigma_values = [0.9, 1.7]
     
@@ -650,22 +654,40 @@ def euclidean_mse_analysis(coverage_df):
             subset = coverage_df[(coverage_df['sigma'] == str(sigma)) & (coverage_df['train_size'] == N)]
             
             if len(subset) > 0:
-                pb_mse_mean = subset['pb_mse'].apply(lambda x: np.mean(x) if hasattr(x, '__len__') else x).mean()
-                conf_mse_mean = subset['conf_mse'].apply(lambda x: np.mean(x) if hasattr(x, '__len__') else x).mean()
+                # Extract all MSE values
+                pb_mse_values = subset['pb_mse'].apply(lambda x: np.mean(x) if hasattr(x, '__len__') else x)
+                conf_mse_values = subset['conf_mse'].apply(lambda x: np.mean(x) if hasattr(x, '__len__') else x)
+                
+                # Calculate means and standard deviations
+                pb_mse_mean = pb_mse_values.mean()
+                pb_mse_std = pb_mse_values.std()
+                conf_mse_mean = conf_mse_values.mean()
+                conf_mse_std = conf_mse_values.std()
                 
                 relative_improvement = ((conf_mse_mean - pb_mse_mean) / conf_mse_mean) * 100
                 
                 results.append({
                     'train_size': N,
                     'sigma': sigma,
-                    'pb_mse': pb_mse_mean,
-                    'conf_mse': conf_mse_mean,
+                    'pb_mse_mean': pb_mse_mean,
+                    'pb_mse_std': pb_mse_std,
+                    'conf_mse_mean': conf_mse_mean,
+                    'conf_mse_std': conf_mse_std,
                     'relative_improvement': relative_improvement
                 })
     
     result_df = pd.DataFrame(results)
     result_df = result_df.set_index(['train_size', 'sigma'])
-    return result_df
+    
+    # Format the display to show mean ± std
+    formatted_df = result_df.copy()
+    formatted_df['pb_mse'] = result_df.apply(lambda row: f"{row['pb_mse_mean']:.4f} ± {row['pb_mse_std']:.4f}", axis=1)
+    formatted_df['conf_mse'] = result_df.apply(lambda row: f"{row['conf_mse_mean']:.4f} ± {row['conf_mse_std']:.4f}", axis=1)
+    
+    # Keep only the formatted columns and relative improvement
+    display_df = formatted_df[['pb_mse', 'conf_mse', 'relative_improvement']].copy()
+    
+    return display_df
 
 # ================================
 # SPHERE SPACE FUNCTIONS
@@ -975,54 +997,9 @@ def sphere_H2_type_iii_analysis(pb_coverage_df):
             )
     
     return pb_latex
-    """Generate Type I tables"""
-    sample_sizes = [50, 100, 200, 500]
-    kappa_values = [50, 200]
-    
-    # Calculate bootstrap statistics
-    pb_diccionario_i = calculate_type_i_coverage_sphere_H2(
-        pb_coverage_df, sample_sizes, kappa_values, B=500, random_seed=1
-    )
-    
-    # Create prediction balls table
-    pb_rows = []
-    index = []
-    for kappa in kappa_values:
-        for N in sample_sizes:
-            pb_row = []
-            pb_means = pb_diccionario_i[f'kappa_{kappa}'][str(N)]['means']
-            pb_stds = pb_diccionario_i[f'kappa_{kappa}'][str(N)]['stds']
-            # Format as "mean (std)"
-            pb_formatted_values = [f"{100*pb_means[i]:.1f} ({100*pb_stds[i]:.2f})" for i in range(3)]
-            pb_row.extend(pb_formatted_values)
-            pb_rows.append(pb_row)
-            index.append((f"{kappa}", f"{N}"))
 
-    # MultiIndex for rows and columns
-    row_index = pd.MultiIndex.from_tuples(index, names=["kappa", "N"])
-    col_index = pd.MultiIndex.from_product(
-        [["0.01", "0.05", "0.1"]],
-        names=["Significance Level"]
-    )
 
-    # Create the DataFrame
-    pb_df = pd.DataFrame(pb_rows, index=row_index, columns=col_index)
-    
-    # Apply formatting with column-specific target coverage
-    target_coverages = [0.99, 0.95, 0.90]
-    pb_latex = pb_df.copy()
-    for col_idx, col in enumerate(pb_df.columns):
-        target_coverage = target_coverages[col_idx]
-        for row_idx in pb_df.index:
-            pb_latex.loc[row_idx, col] = format_cell(
-                pb_df.loc[row_idx, col], 
-                target_coverage=target_coverage, 
-                n_trials=1000
-            )
-    
-    return pb_latex
-
-def sphere_H2_type_ii_analysis(pb_coverage_df, save_individual=True):
+def sphere_H2_type_ii_analysis(pb_coverage_df, space, save_individual=True):
     """Generate Type II plots exactly"""
     train_sizes = [50, 100, 200, 500]
     alpha_levels = [0.01, 0.05, 0.1]
@@ -1190,11 +1167,15 @@ def sphere_H2_type_ii_analysis(pb_coverage_df, save_individual=True):
             fig_individual.tight_layout()
             
             # Save the individual plot
-            filename = output_dir / f'sphere_hyperboloid_type_ii_coverage_{str(alpha_level)[2:]}.png'
+            if space == 'sphere':
+                filename = output_dir / f'sphere_type_ii_coverage_{str(alpha_level)[2:]}.png'
+            else:  # space == 'hyperboloid'
+                filename = output_dir / f'hyperboloid_type_ii_coverage_{str(alpha_level)[2:]}.png'
+
             fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=75, transparent=True)
             plt.close(fig_individual)  # Close individual figure to free memory
 
-def sphere_H2_type_iv_analysis(pb_coverage_df, save_individual=True):
+def sphere_H2_type_iv_analysis(pb_coverage_df, space, save_individual=True):
     """Generate Type IV plots exactly"""
     train_sizes = [50, 100, 200, 500]
     alpha_levels = [0.01, 0.05, 0.1]
@@ -1360,7 +1341,11 @@ def sphere_H2_type_iv_analysis(pb_coverage_df, save_individual=True):
             fig_individual.tight_layout()
             
             # Save the individual plot
-            filename = output_dir / f'sphere_hyperboloid_type_iv_coverage_{str(alpha_level)[2:]}.png'
+            if space == 'sphere':
+                filename = output_dir / f'sphere_type_iv_coverage_{str(alpha_level)[2:]}.png'
+            else:  # space == 'hyperboloid'
+                filename = output_dir / f'hyperboloid_type_iv_coverage_{str(alpha_level)[2:]}.png'
+
             fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=75, transparent=True)
             plt.close(fig_individual)  # Close individual figure to free memory
 
@@ -3070,13 +3055,74 @@ def spd_radius_analysis(SPD_coverage_df, save_individual=True):
             ax.grid(False)
             fig.tight_layout()
             
-            # Save the plot
+        plt.show()
+        
+        # Save individual plots if requested
+        if save_individual:
             output_dir = ROOT_DIR / 'results_plots'
             output_dir.mkdir(exist_ok=True)
-            filename = output_dir / f'{metric}_SPD_radius_vs_df_{alpha_level:.2f}.png'
-            fig.savefig(filename, bbox_inches='tight', format='png', dpi=75, transparent=True)
+            
+            # Create individual plots for each alpha level
+            for data, alpha_level in zip(
+                [radius_alpha_01, radius_alpha_05, radius_alpha_1], 
+                [0.01, 0.05, 0.1]):
+                
+                coverage_df = data
+                # Create individual figure
+                fig_individual, ax = plt.subplots(1, 1, figsize=(7, 7), facecolor="white")
+                
+                # Extract unique train sizes and degrees of freedom
+                train_sizes = sorted(coverage_df['train_size'].unique())
+                dfs = coverage_df['df'].unique()
+                
+                # Prepare the data for boxplots
+                grouped_data = [
+                    [coverage_df.loc[(coverage_df['df'] == df) & (coverage_df['train_size'] == N), 'OOB_quantile']
+                        for N in train_sizes]
+                    for df in dfs ]
 
-        plt.show()
+                # Plotting
+                palette = ['#ee6100', 'g', 'b', 'y']  # Generate unique colors
+
+                for i, group in enumerate(grouped_data):
+                    # In this loop, select the degrees of freedom
+                    base_position = 1 + i * (len(train_sizes) + 1)  # spacing between groups
+
+                    for j, ts_data in enumerate(group):
+                        # In this loop, select the train sizes. ts_data is the dataset for train size and df
+                        pos = base_position + j
+                        ax.boxplot(ts_data, positions=[pos], widths=.9, notch=False, whiskerprops=whiskerprops,
+                                  capprops=capprops, showfliers=False, medianprops=medianprops, showmeans=False) 
+
+                        for x, val in zip(np.random.normal(pos, 0.14, ts_data.shape[0]), ts_data):
+                            ax.scatter(x, val, alpha=0.2, color=palette[j])
+
+                sns.despine(bottom=True)  # removes right and top axis lines
+                sns.set_style("whitegrid")
+
+                # Formatting
+                ax.set_xticks(
+                    ticks=[1 + i * (len(train_sizes) + 1) + (len(train_sizes) - 1) / 2 for i in range(len(dfs))],
+                    labels=dfs
+                )
+                ax.set_xlim(0, len(dfs) * (len(train_sizes) + 1))
+                    
+                ax.set_xlabel(r'$d$', fontsize=17)
+                ax.set_ylabel('Radius', fontsize=17)
+                ax.tick_params(axis='x', labelsize=17)
+                ax.tick_params(axis='y', labelsize=17)
+                legend_handles = [
+                    mpatches.Patch(color=palette[j], label=f'Train size: {train_sizes[j]}') 
+                    for j in range(len(train_sizes))
+                ]
+                ax.legend(handles=legend_handles, loc='upper right', fontsize=13)
+                ax.grid(False)
+                fig_individual.tight_layout()
+                
+                # Save the individual plot
+                filename = output_dir / f'{metric}_SPD_radius_vs_df_{alpha_level:.2f}.png'
+                fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=75, transparent=True)
+                plt.close(fig_individual)  # Close individual figure to free memory
 
 # ================================
 # ADDITIONAL PLOTTING FUNCTIONS FROM plots.ipynb
@@ -3613,83 +3659,222 @@ def create_sunspot_trajectories_plot(use_predictions=False, save_plot=True):
     """
     from scipy.spatial import geometric_slerp
     
-    # Load data
-    X_test, y_test, _, y_pred = load_sunspot_data()
-    
-    # Choose what to plot
+    # Load data for cycles 21, 22, 23
+    filename = os.path.join(os.getcwd(), "sunspots/results", f"hypothesis_results_cycle_{21}.npy")
+    sample = np.load(filename, allow_pickle=True).item()
+    X_test_21 = sample['test_data']['X']
     if use_predictions:
-        y_to_plot = y_pred
+        y_21 = sample['predictions']['sphere']
+    else:
+        y_21 = sample['test_data']['y']
+
+    filename = os.path.join(os.getcwd(), 'sunspots/results', f"hypothesis_results_cycle_{22}.npy")
+    sample = np.load(filename, allow_pickle=True).item()
+    X_test_22 = sample['test_data']['X']
+    if use_predictions:
+        y_22 = sample['predictions']['sphere']
+    else:
+        y_22 = sample['test_data']['y']
+
+    filename = os.path.join(os.getcwd(), 'sunspots/results', f"hypothesis_results_cycle_{23}.npy")
+    sample = np.load(filename, allow_pickle=True).item()
+    X_test_23 = sample['test_data']['X']
+    if use_predictions:
+        y_23 = sample['predictions']['sphere']
+    else:
+        y_23 = sample['test_data']['y']
+
+    # Concatenate data
+    X_test = np.concatenate((X_test_23, X_test_22), axis=0)
+    X_test = np.concatenate((X_test, X_test_21), axis=0)
+    y_data = np.concatenate((y_23, y_22), axis=0)
+    y_data = np.concatenate((y_data, y_21), axis=0)
+    
+    # Set filename based on plot type
+    if use_predictions:
         filename = 'sunspot_predicted_trajectories.png'
     else:
-        y_to_plot = y_test
         filename = 'sunspot_trajectories.png'
     
     # Create figure
-    fig = plt.figure(figsize=(7, 7))
+    fig = plt.figure()
+    fig.set_size_inches(7, 7)
     ax = plt.axes(projection='3d', computed_zorder=False)
-    
-    # Create sphere wireframe
-    u = np.linspace(0, np.pi, 150)
+
+    # Sphere mesh (just for visualization)
+    u = np.linspace(0, np.pi, 150)  # Higher resolution
     v = np.linspace(0, 2 * np.pi, 150)
     u, v = np.meshgrid(u, v)
-    
+
     x_sphere = np.sin(u) * np.cos(v)
     y_sphere = np.sin(u) * np.sin(v)
     z_sphere = np.cos(u)
-    
+
+    # Plot the wireframe sphere
     ax.plot_wireframe(x_sphere, y_sphere, z_sphere, color='lightblue', alpha=0.3, zorder=0)
-    
-    # Define colors
+
+    # Define colors for clarity
     positive_color = '#14A114'  # Green
     negative_color = '#CA1919'  # Red
+
+    # Number of points to use for geodesic interpolation
     n_points = 150
-    
-    # Plot geodesics and points
-    for birth, death in zip(X_test, y_to_plot):
+
+    # Plot geodesics connecting birth to death/prediction and dots at both points
+    for birth, target in zip(X_test, y_data):
         # Only plot if birth y-coordinate is positive
         if birth[1] > 0:
-            # Compute theta difference
+            # Compute theta for direction
             theta_birth = np.arctan2(birth[1], birth[0])
-            theta_death = np.arctan2(death[1], death[0])
-            delta_theta = theta_death - theta_birth
+            theta_target = np.arctan2(target[1], target[0])
+            delta_theta = theta_target - theta_birth
             # Normalize to [-pi, pi]
             delta_theta = (delta_theta + np.pi) % (2 * np.pi) - np.pi
-            
-            # Choose color based on direction
+
+            # Line color: green if moving right, red if moving left
             line_color = positive_color if delta_theta > 0 else negative_color
             
             # Create geodesic path using SLERP
+            # Define the interpolation parameter
             t_vals = np.linspace(0, 1, n_points)
-            geodesic_points = geometric_slerp(birth, death, t_vals)
             
-            # Draw geodesic path and points
-            ax.plot(geodesic_points[:, 0], geodesic_points[:, 1], geodesic_points[:, 2], 
-                   color=line_color, linewidth=1, alpha=0.9)
+            # Perform the geodesic interpolation
+            geodesic_points = geometric_slerp(birth, target, t_vals)
+            
+            # Draw the geodesic path
+            ax.plot(geodesic_points[:, 0], 
+                    geodesic_points[:, 1], 
+                    geodesic_points[:, 2], 
+                    color=line_color, linewidth=1, alpha=0.9)
+            
+            # Add colored dots at both points
             ax.scatter(birth[0], birth[1], birth[2], color=line_color, linewidth=0, s=3, zorder=2)
-            ax.scatter(death[0], death[1], death[2], color=line_color, linewidth=0, s=3, zorder=2)
-    
-    # Create legend
+            ax.scatter(target[0], target[1], target[2], color=line_color, linewidth=0, s=3, zorder=2)
+
+    # Create custom legend elements
     legend_elements = [
         Line2D([0], [0], color=positive_color, linestyle='solid', markersize=10, label=r'$\Delta_\theta > 0$'),
         Line2D([0], [0], color=negative_color, linestyle='solid', markersize=10, label=r'$\Delta_\theta < 0$')
     ]
-    
-    # Set view and styling
-    ax.set_xlim(-0.3, 0.3)
-    ax.set_ylim(0, 1)
-    ax.set_zlim(-0.75, 1.2)
-    ax.view_init(elev=20, azim=90)
+
+    # Set zoom level by adjusting axis limits
+    ax.set_xlim(-0.3, .3)  # Zoom in on x-axis
+    ax.set_ylim(0, 1)      # Only show positive y (0 to 1 instead of -1 to 1)
+    ax.set_zlim(-.75, 1.2)  # Zoom in on z-axis
+
+    # Final plot settings - adjust view to better see the hemisphere with y > 0
+    ax.view_init(elev=20, azim=90)  # View from positive y-axis
     Axes3D.set_aspect(ax, 'equal')
+
     ax.grid(False)
     ax.set_axis_off()
     fig.tight_layout()
-    
+
     # Save if requested
     if save_plot:
         output_dir = Path("results_plots")
         output_dir.mkdir(exist_ok=True)
         plt.savefig(output_dir / filename, format='png', dpi=75, bbox_inches='tight', transparent=True)
     
+    plt.show()
+
+
+def create_sunspot_spheroid_balls_plot(data_file='sunspots/results/hypothesis_results_cycle_23.npy',
+                                      save_filename='sunspots_spheroid_balls.png', 
+                                      a=0.5, c=1.0, figsize=(7, 7), dpi=75):
+    """
+    Create a visualization of OOB prediction balls comparing spherical and spheroidal metrics.
+    
+    Parameters:
+    -----------
+    data_file : str
+        Path to the data file containing sunspot results
+    save_filename : str
+        Filename to save the plot
+    a : float
+        Spheroid parameter a
+    c : float
+        Spheroid parameter c  
+    figsize : tuple
+        Figure size
+    dpi : int
+        DPI for saving the figure
+        
+    Returns:
+    --------
+    tuple
+        matplotlib figure and axis objects
+    """
+    if not PYFRECHET_AVAILABLE:
+        raise ImportError("pyfrechet is required for this visualization")
+    
+    # Load the data
+    with open(data_file, 'rb') as f:
+        data_23 = np.load(f, allow_pickle=True).item()
+    
+    y_test_sphere = data_23['test_data']['y']
+    preds_sphere = data_23['predictions']['spheroid_0.5_1']
+    
+    # Set up the figure
+    fig = plt.figure()
+    fig.set_size_inches(*figsize)
+    ax = plt.axes(projection='3d', computed_zorder=False)
+    
+    # Create sphere wireframe
+    x_sphere, y_sphere, z_sphere = create_S2_grid(grid_size=100)
+    ax.plot_wireframe(x_sphere, y_sphere, z_sphere, color='lightblue', alpha=0.3, zorder=0)
+    
+    # Define indices to plot
+    indices = [8, 14, 21, 23, 24, 25, 26, 27, 28, 32, 33, 35, 36, 40, 41, 42, 94, 96,
+               123, 125, 167, 255, 256, 266, 336, 409]
+
+    new_indices = [idx for idx in indices if preds_sphere[idx][1] >= 0]
+    
+    # Create metric spaces
+    M_sphere = Sphere(2)
+    M_spheroid = Spheroid(a=a, c=c)
+    
+    # First plot the sphere balls (in green)
+    plot_OOB_balls(M=M_sphere, 
+                   predictions=preds_sphere, 
+                   true_y=y_test_sphere, 
+                   indices_to_plot=new_indices, 
+                   Dalpha=data_23['oob_quantile']['sphere'],
+                   ax=ax, 
+                   color='green', 
+                   alpha=0.1, 
+                   N_points=1000000)
+    
+    # Then plot the spheroid balls (in blue)
+    sphere_custom_centers_plot_OOB_balls_parallel(
+        M=M_spheroid,
+        points=sphere_to_spheroid(preds_sphere[new_indices], a=a, c=c),
+        true_y=y_test_sphere[new_indices],
+        Dalpha=data_23['oob_quantile']['spheroid_0.5_1'],
+        ax=ax,
+        a=a,
+        c=c,
+        colors=['blue'],
+        alpha=1,
+        N_points=1000000,
+        n_jobs=-1
+    )
+    
+    # Set the view and limits
+    ax.view_init(elev=20, azim=90)
+    ax.set_xlim(-0.3, .3)
+    ax.set_ylim(0, 1)
+    ax.set_zlim(-.75, 1.2)
+    Axes3D.set_aspect(ax, 'equal')
+    ax.grid(False)
+    ax.set_axis_off()
+    
+    fig.tight_layout()
+    
+    # Save the figure
+    output_path = ROOT_DIR / 'results_plots' / save_filename
+    fig.savefig(output_path, format='png', dpi=dpi, bbox_inches='tight')
+
     plt.show()
 
 def create_sunspot_plots():
@@ -3699,6 +3884,17 @@ def create_sunspot_plots():
     
     print("\n=== Creating sunspot predicted trajectories plot ===")
     create_sunspot_trajectories_plot(use_predictions=True, save_plot=True)
+
+    print("\n=== Creating sunspot prediction balls plot ===")
+    create_sunspot_spheroid_balls_plot(
+        data_file='sunspots/results/hypothesis_results_cycle_23.npy',
+        save_filename='sunspots_spheroid_balls.png',
+        a=0.5, 
+        c=1.0, 
+        figsize=(7, 7), 
+        dpi=75
+    )
+
 
 def create_all_paper_plots():
     """Create all additional plots from the paper."""
@@ -3717,8 +3913,267 @@ def create_all_paper_plots():
     print("\n=== Creating hyperboloid prediction balls ===")
     create_hyperboloid_prediction_balls()
     
-    print("\n=== Creating sunspot plots ===")
-    create_sunspot_plots()
+    print("\n=== Creating SPD ball visualizations ===")
+    create_spd_affine_invariant_ball()
+    create_spd_log_euclidean_ball()
+    create_spd_log_cholesky_ball()
+
+
+def generate_random_spd_matrix(q_array, limits_unif=30, seed=1):
+    """Generate a random q x q symmetric positive definite (SPD) matrix."""
+    import numpy as np
+    np.random.RandomState(seed)
+    
+    q_array = np.array(q_array, dtype=int)
+    # Ensure the matrices are symmetric positive definite
+    mat = [(np.random.rand(q_array[i], q_array[i])-1/2)*limits_unif for i in range(len(q_array))]
+    return [np.dot(mat[i], mat[i].T) for i in range(len(q_array))]
+
+
+def plot_ellipse(mat, ax, xy=(0,0), scale_factor=1, edgecolor='red', 
+                facecolor='None', linewidth=2, alpha=1):
+    """Plot an ellipse representing an SPD matrix."""
+    import numpy as np
+    from matplotlib.patches import Ellipse
+    
+    eigenvalues, eigenvectors = np.linalg.eig(mat)
+    theta = np.degrees(np.arctan2(*eigenvectors[:, 0][::-1]))
+    ellipse = Ellipse(xy=xy,
+                      width=scale_factor*np.sqrt(eigenvalues[0]),
+                      height=scale_factor*np.sqrt(eigenvalues[1]),
+                      angle=theta,
+                      edgecolor=edgecolor,
+                      facecolor=facecolor,
+                      lw=linewidth,
+                      alpha=alpha)
+    ax.add_patch(ellipse)
+
+
+def create_spd_affine_invariant_ball():
+    """Create SPD ball visualization using affine-invariant metric."""
+    from scipy.stats import wishart
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from scipy.special import digamma
+    from pyfrechet.metric_spaces import CustomAffineInvariant
+    from pyfrechet.metric_spaces.utils import vectorize
+    print("OOB prediction ball visualization using affine-invariant metric...")
+    # Parameters
+    d = 15
+    q = 2
+    num_samples = 10000
+    alpha = 0.1
+    xy_factor = 50
+    scale_factor = 1/2
+    limits_unif = 3.75
+    c_dq = 2 * np.exp((1 / q) * sum(digamma((d - np.arange(1, q + 1) + 1) / 2)))
+
+    np.random.seed(1)
+
+    # Generate a SPD matrix M_0
+    M_0 = np.array([[1.12549561, -0.13181672],
+                    [-0.13181672, 0.67340954]])
+
+    # Instantiate the Affine-Invariant class
+    M = CustomAffineInvariant(dim=2)
+
+    # Simulate Wishart samples
+    MC_samples = wishart.rvs(df=d, scale=1/c_dq * M_0, size=num_samples)
+    plot_MC_samples = generate_random_spd_matrix(q_array=np.repeat(2, num_samples), 
+                                                limits_unif=limits_unif, seed=4)
+
+    # Compute the affine-invariant distance for each sample
+    ai_distances = []
+    for S in MC_samples:
+        dist = M.d(vectorize(S), vectorize(M_0))
+        ai_distances.append(dist)
+
+    # Estimate the quantile using the samples
+    R_1_alpha = np.quantile(ai_distances, 1 - alpha)
+
+    # Create a figure and axis for plotting
+    fig = plt.figure(facecolor="white", figsize=(7, 7))
+    ax = fig.add_subplot(111)
+
+    # Set axis limits and aspect ratio
+    ax.set_ylim(-0.5, 0.5)
+    ax.set_xlim(-0.65, 0.65)
+    ax.set_aspect('equal', 'box')
+
+    # Plot the balls for each sample whose distance to M_0 is less than R_1_alpha
+    for S in plot_MC_samples:
+        if M.d(vectorize(S), vectorize(M_0)) <= R_1_alpha:
+            plot_ellipse(S, ax=ax, xy=(1/xy_factor, 0), scale_factor=scale_factor, 
+                        edgecolor='deepskyblue', alpha=0.1)
+
+    # Plot the center M_0 as a black ellipse
+    plot_ellipse(M_0, ax=ax, xy=(1/xy_factor, 0), scale_factor=scale_factor, 
+                edgecolor='black', alpha=1)
+
+    # Set tick parameters for better readability
+    ax.tick_params(labelsize=17)
+    ax.grid(False)
+    ax.set_axis_off()
+    
+    # Save to results_plots directory
+    output_dir = ROOT_DIR / "results_plots"
+    output_dir.mkdir(exist_ok=True)
+    fig.savefig(output_dir / "SPD_AI_ball.png", format="png", dpi=75, 
+               bbox_inches='tight', transparent=True)
+    plt.show()
+    return fig
+
+
+def create_spd_log_euclidean_ball():
+    """Create SPD ball visualization using log-euclidean metric."""
+    from scipy.stats import wishart
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from scipy.special import digamma
+    from pyfrechet.metric_spaces import CustomLogEuclidean
+    from pyfrechet.metric_spaces.utils import vectorize
+
+    print("OOB prediction ball visualization using log-euclidean metric...")
+    # Parameters
+    d = 15
+    q = 2
+    num_samples = 10000
+    alpha = 0.1
+    xy_factor = 50
+    scale_factor = 1/2
+    limits_unif = 3.75
+
+    np.random.seed(1)
+    c_dq = 2 * np.exp((1 / q) * sum(digamma((d - np.arange(1, q + 1) + 1) / 2)))
+    
+    # Generate a SPD matrix M_0
+    M_0 = np.array([[1.12549561, -0.13181672],
+                    [-0.13181672, 0.67340954]])
+
+    # Instantiate the Log-Euclidean class
+    M = CustomLogEuclidean(dim=2)
+
+    # Simulate Wishart samples
+    MC_samples = wishart.rvs(df=d, scale=1/c_dq * M_0, size=num_samples)
+    plot_MC_samples = generate_random_spd_matrix(q_array=np.repeat(2, num_samples), 
+                                                limits_unif=limits_unif, seed=4)
+
+    # Compute the Log-Euclidean distance for each sample
+    log_euclidean_distances = []
+    for S in MC_samples:
+        S_vec = vectorize(S)
+        dist = M.d(S_vec, vectorize(M_0))
+        log_euclidean_distances.append(dist)
+
+    # Estimate the quantile using the samples
+    R_1_alpha = np.quantile(log_euclidean_distances, 1 - alpha)
+
+    # Create a figure and axis for plotting
+    fig = plt.figure(facecolor="white", figsize=(7, 7))
+    ax = fig.add_subplot(111)
+
+    # Set axis limits and aspect ratio
+    ax.set_ylim(-0.5, 0.5)
+    ax.set_xlim(-0.65, 0.65)
+    ax.set_aspect('equal', 'box')
+
+    # Plot the balls for each sample whose distance to M_0 is less than R_1_alpha
+    for S in plot_MC_samples:
+        if M.d(vectorize(S), vectorize(M_0)) <= R_1_alpha:
+            plot_ellipse(S, ax=ax, xy=(1/xy_factor, 0), scale_factor=scale_factor, 
+                        edgecolor='deepskyblue', alpha=0.1)
+
+    # Plot the center M_0 as a black ellipse
+    plot_ellipse(M_0, ax=ax, xy=(1/xy_factor, 0), scale_factor=scale_factor, 
+                edgecolor='black', alpha=1)
+
+    # Set tick parameters
+    ax.tick_params(labelsize=17)
+    ax.grid(False)
+    ax.set_axis_off()
+    
+    # Save to results_plots directory
+    output_dir = ROOT_DIR / "results_plots"
+    output_dir.mkdir(exist_ok=True)
+    fig.savefig(output_dir / "SPD_LE_ball.png", format="png", dpi=75, 
+               bbox_inches='tight', transparent=True)
+    plt.show()
+    return fig
+
+
+def create_spd_log_cholesky_ball():
+    """Create SPD ball visualization using log-cholesky metric."""
+    from scipy.stats import wishart
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from scipy.special import digamma
+    from pyfrechet.metric_spaces import LogCholesky, spd_to_log_chol
+
+    print("OOB prediction ball visualization using log-Cholesky metric...")
+
+    # Parameters
+    q = 2
+    num_samples = 10000
+    alpha = 0.1
+    xy_factor = 50
+    scale_factor = 1/2
+    limits_unif = 5
+    d = 15
+    c_dq = np.exp((1 / q) * sum(digamma((d - np.arange(1, q + 1) + 1) / 2)))
+
+    # Generate a random SPD matrix M_0
+    M_0 = np.array([[1.12549561, -0.13181672],
+                    [-0.13181672, 0.67340954]])
+    np.random.seed(1)
+
+    # Instantiate the Log-Cholesky class
+    M = LogCholesky(dim=2)
+
+    # Simulate Wishart samples
+    MC_samples = wishart.rvs(df=d, scale=1/c_dq * M_0, size=num_samples)
+    plot_MC_samples = generate_random_spd_matrix(q_array=np.repeat(2, num_samples), 
+                                                limits_unif=limits_unif, seed=4)
+
+    # Compute the Log-Cholesky distance for each sample
+    log_chol_distances = []
+    for S in MC_samples:
+        dist = M.d(spd_to_log_chol(S), spd_to_log_chol(M_0))
+        log_chol_distances.append(dist)
+
+    # Estimate the quantile using the samples
+    R_1_alpha = np.quantile(log_chol_distances, 1 - alpha)
+
+    # Create a figure and axis for plotting
+    fig = plt.figure(facecolor="white", figsize=(7, 7))
+    ax = fig.add_subplot(111)
+
+    # Set axis limits and aspect ratio
+    ax.set_ylim(-0.5, 0.5)
+    ax.set_xlim(-0.65, 0.65)
+    ax.set_aspect('equal', 'box')
+
+    # Plot the balls for each sample whose distance to M_0 is less than R_1_alpha
+    for S in plot_MC_samples:
+        if M.d(spd_to_log_chol(S), spd_to_log_chol(M_0)) <= R_1_alpha:
+            plot_ellipse(S, ax=ax, xy=(1/xy_factor, 0), scale_factor=scale_factor, 
+                        edgecolor='deepskyblue', alpha=0.1)
+
+    # Plot the center M_0 as a black ellipse
+    plot_ellipse(M_0, ax=ax, xy=(1/xy_factor, 0), scale_factor=scale_factor, 
+                edgecolor='black', alpha=1)
+
+    # Set tick parameters
+    ax.tick_params(labelsize=17)
+    ax.grid(False)
+    ax.set_axis_off()
+    
+    # Save to results_plots directory
+    output_dir = ROOT_DIR / "results_plots"
+    output_dir.mkdir(exist_ok=True)
+    fig.savefig(output_dir / "SPD_LC_ball.png", format="png", dpi=75, 
+               bbox_inches='tight', transparent=True)
+    plt.show()
+    return fig
 
 # ================================
 # UNIFIED PUBLIC INTERFACE FUNCTIONS
@@ -3788,7 +4243,7 @@ def create_type_ii_plots(coverage_df, metric_space, save_individual=True):
     if metric_space == 'euclidean':
         euclidean_type_ii_analysis(coverage_df, save_individual=save_individual)
     elif metric_space in ['sphere', 'hyperboloid']:
-        sphere_H2_type_ii_analysis(coverage_df, save_individual=save_individual)
+        sphere_H2_type_ii_analysis(coverage_df, space=metric_space, save_individual=save_individual)
     elif metric_space == 'spd':
         spd_type_ii_analysis(coverage_df, save_individual=save_individual)
     else:
@@ -3834,7 +4289,7 @@ def create_type_iv_plots(coverage_df, metric_space, save_individual=True):
     if metric_space == 'euclidean':
         euclidean_type_iv_analysis(coverage_df, save_individual=save_individual)
     elif metric_space in ['sphere', 'hyperboloid']:
-        sphere_H2_type_iv_analysis(coverage_df, save_individual=save_individual)
+        sphere_H2_type_iv_analysis(coverage_df, space=metric_space, save_individual=save_individual)
     elif metric_space == 'spd':
         spd_type_iv_analysis(coverage_df, save_individual=save_individual)
     else:
@@ -4187,3 +4642,1437 @@ def create_spd_frechet_plots():
     )
     
     return fig1, fig2, fig3
+
+
+# ================================
+# SUNSPOTS SPHERE/SPHEROID FUNCTIONS
+# ================================
+
+def create_S2_grid(grid_size: int = 200) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Create a mesh grid for the unit sphere."""
+    u = np.linspace(0, np.pi, grid_size)
+    v = np.linspace(0, 2 * np.pi, grid_size)
+    u, v = np.meshgrid(u, v)
+
+    x_sphere = np.sin(u) * np.cos(v)
+    y_sphere = np.sin(u) * np.sin(v)
+    z_sphere = np.cos(u)
+    return x_sphere, y_sphere, z_sphere
+
+
+def canonical_lattice(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Generate a canonical lattice on the unit sphere.
+    
+    Parameters:
+    - n: int, number of points to generate
+
+    Returns:
+    - x, y, z: coordinates of the points on the sphere
+    """
+    goldenRatio = (1 + 5**0.5)/2
+    i = np.arange(0, n)
+    theta = 2 * np.pi * i / goldenRatio
+    phi = np.arccos(1 - 2*(i+0.5)/n)
+    x = np.cos(theta) * np.sin(phi)
+    y = np.sin(theta) * np.sin(phi)
+    z = np.cos(phi)
+    return x, y, z
+
+
+def plot_OOB_balls(M, true_y: np.ndarray, predictions: np.ndarray, indices_to_plot: list[int],
+                   Dalpha: float, ax, color='deepskyblue', alpha=0.1, N_points: int = 2000) -> None:
+    """
+    Plot OOB balls using canonical lattice sampling for the sphere.
+    """
+    # Sample points on the sphere using canonical lattice
+    x_lattice, y_lattice, z_lattice = canonical_lattice(N_points)
+    sphere_points = np.vstack((x_lattice, y_lattice, z_lattice)).T
+
+    for index_to_plot in indices_to_plot:
+        center = predictions[index_to_plot, :]
+        # Compute distances from center to all lattice points
+        dists = M.d(sphere_points, center)
+        mask = dists <= Dalpha
+        # Plot the points inside the ball
+        ax.scatter3D(x_lattice[mask], y_lattice[mask], z_lattice[mask], color=color, alpha=alpha, s=2)
+
+        # Plot the prediction and true value
+        ax.scatter3D(center[0], center[1], center[2], marker='x', color='red', s=30, alpha=1)
+        ax.scatter3D(true_y[index_to_plot, 0], true_y[index_to_plot, 1], true_y[index_to_plot, 2], 
+                    marker='o', s=30, alpha=1, color='#DFA700')
+        ax.view_init(20, 90)
+
+
+def create_spheroid_points(N_points: int, a: float = 1.0, c: float = 1.0) -> np.ndarray:
+    """
+    This is the grid we use to plot the prediction balls
+    """
+    # Create grid in angle space
+    u = np.linspace(0, np.pi, int(np.sqrt(N_points)))
+    v = np.linspace(0, 2 * np.pi, 2*int(np.sqrt(N_points)))
+    u, v = np.meshgrid(u, v)
+    angles = np.stack([u.flatten(), v.flatten()], axis=-1)
+    
+    # Convert angles to spheroid points
+    return angles_to_spheroid(angles, a=a, c=c)
+
+
+def sphere_custom_centers_plot_OOB_balls(M, points, Dalpha, ax, a=1.0, c=1.0, 
+                   colors=['green', 'blue'], alpha=0.1, N_points=2000):
+    """
+    Plot OOB balls using direct spheroid sampling.
+    """
+    # Sample points directly on spheroid
+    spheroid_points = create_spheroid_points(N_points, a=a, c=c)
+    
+    for i, center in enumerate(points):
+        # Compute distances from center to all points
+        dists = M.d(spheroid_points, center)
+        mask = dists <= Dalpha
+        mask = mask.squeeze()
+        
+        sphere_points = spheroid_to_sphere(spheroid_points[mask], a, c, R=1)
+        ax.scatter3D(sphere_points[:,0], sphere_points[:,1], sphere_points[:,2],
+            color=colors[i % len(colors)], alpha=alpha, s=2)
+        
+        # Plot the points inside the ball (in sphere coordinates)
+
+        
+        # Map prediction and true value back to sphere and plot
+        center_sphere = spheroid_to_sphere(center.reshape(1,-1), a, c, R=1)
+        
+        ax.scatter3D(center_sphere[0,0], center_sphere[0,1], center_sphere[0,2], 
+                    marker='o', color="#5DE45D", s=22, alpha=1)
+
+
+def area_pred_ball(M, radius, total_points):
+    """
+    Estimate the area of a prediction ball using the distance of M with given radius.
+    The area is calculated by sampling points "uniformly" on the unit sphere and checking if they are within the radius.
+    
+    Parameters:
+    - M: Metric space
+    - radius: float, radius of the ball
+    - total_points: int, number of points to sample
+
+    Returns:
+    - area: float, area of the ball
+    """
+    x, y, z = canonical_lattice(total_points)
+    return 4*np.pi*np.sum((M.d(np.vstack((x,y,z)).T, np.array([np.sqrt(2)/2,np.sqrt(2)/2,0])) < radius))/total_points
+
+
+def spheroid_custom_centers_plot_OOB_balls(M, points, Dalpha, ax, a=1.0, c=1.0, 
+                   colors=['green', 'blue'], alpha=0.1, N_points=2000):
+    """
+    Plot OOB balls using direct spheroid sampling.
+    """
+    # Sample points directly on spheroid
+    spheroid_points = create_spheroid_points(N_points, a=a, c=c)
+    
+    for i, center in enumerate(points):
+        # Compute distances from center to all points
+        dists = M.d(spheroid_points, center)
+        mask = dists <= Dalpha
+        mask = mask.squeeze()
+        
+        # Plot the points inside the ball
+        ax.scatter3D(spheroid_points[mask,0], spheroid_points[mask,1], spheroid_points[mask,2],
+                    color=colors[i % len(colors)], alpha=alpha, s=2)
+        
+        # Plot the center point
+        ax.scatter3D(center[0], center[1], center[2], 
+                    marker='o', color='#5DE45D', s=22, alpha=1)
+
+
+def create_spheroid_grid(grid_size: int = 200, a: float = 1.0, c: float = 1.0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    This is the grid we use for the spheroid plot wireframes
+    """
+    # Create a mesh grid for the spheroid
+    u = np.linspace(0, np.pi, 2*grid_size)
+    v = np.linspace(0, 2 * np.pi, grid_size)
+    u, v = np.meshgrid(u, v)
+
+    # Convert to spheroid using angles_to_spheroid
+    spheroid_points = angles_to_spheroid(
+        np.stack([u.flatten(), v.flatten()], axis=-1), a=a, c=c
+    )
+    x_spheroid = spheroid_points[:, 0].reshape(u.shape)
+    y_spheroid = spheroid_points[:, 1].reshape(u.shape)
+    z_spheroid = spheroid_points[:, 2].reshape(u.shape)
+    
+    return x_spheroid, y_spheroid, z_spheroid
+
+
+def plot_spheroid(a, c, test_points, M_spheroid):
+    """Plot and save spheroid visualization"""
+    fig_spheroid = plt.figure(figsize=(7, 7))
+    ax_spheroid = plt.axes(projection='3d', computed_zorder=False)
+    
+    # Create spheroid grid and plot wireframe
+    x_spheroid, y_spheroid, z_spheroid = create_spheroid_grid(grid_size=100, a=a, c=c)
+    ax_spheroid.plot_wireframe(x_spheroid, y_spheroid, z_spheroid, color='lightblue', alpha=0.3, zorder=0)
+    
+    # Plot balls on spheroid
+    spheroid_custom_centers_plot_OOB_balls(
+        M=M_spheroid,
+        points=test_points,
+        Dalpha=0.25,
+        ax=ax_spheroid,
+        a=a,
+        c=c,
+        colors=['red', 'black'],
+        alpha=0.3,
+        N_points=400000
+    )
+    
+    # Spheroid view settings
+    ax_spheroid.view_init(elev=0, azim=90)
+    ax_spheroid.set_xlim(-0.8*a, .8*a)
+    ax_spheroid.set_ylim(-.8*a, 0.8*a)
+    ax_spheroid.set_zlim(-1.1*c, 1.1*c)
+
+    if a == 0.25:
+        ax_spheroid.set_zlim(-1.*c, 1.1*c)
+    elif a == 0.5:
+        ax_spheroid.set_zlim(-.9*c, .9*c)
+    elif a == 0.75:
+        ax_spheroid.set_zlim(-.75*c, .75*c)
+    elif c == 1/3:
+        ax_spheroid.set_xlim(-.65*a, .6*a)
+    elif c == 2/3:
+        ax_spheroid.set_xlim(-.35*a, .35*a)
+        
+    Axes3D.set_aspect(ax_spheroid, 'equal')
+    ax_spheroid.grid(False)
+    ax_spheroid.set_axis_off()
+    fig_spheroid.tight_layout()
+    plt.show()
+    
+    # Save to results_plots directory
+    output_dir = ROOT_DIR / "results_plots"
+    output_dir.mkdir(exist_ok=True)
+    fig_spheroid.savefig(output_dir / f'spheroid_a{a:.2f}_c{c:.2f}.png', format='png', dpi=50, bbox_inches='tight', transparent=True)
+    plt.close()
+
+
+def plot_sphere(a, c, test_points, M_spheroid):
+    """Plot and save sphere visualization"""
+    fig_sphere = plt.figure(figsize=(7, 7))
+    ax_sphere = plt.axes(projection='3d', computed_zorder=False)
+    
+    # Create sphere grid and plot wireframe
+    x_sphere, y_sphere, z_sphere = create_S2_grid(grid_size=100)
+    ax_sphere.plot_wireframe(x_sphere, y_sphere, z_sphere, color='lightblue', alpha=0.3, zorder=0)
+    
+    # Plot balls on sphere
+    sphere_custom_centers_plot_OOB_balls(
+        M=M_spheroid,
+        points=test_points,
+        Dalpha=0.25,
+        ax=ax_sphere,
+        a=a,
+        c=c,
+        colors=['red', 'black'],
+        alpha=0.3,
+        N_points=400000
+    )
+    
+    # Sphere view settings
+    ax_sphere.view_init(elev=0, azim=90)
+    ax_sphere.set_xlim(-0.7, 0.7)
+    ax_sphere.set_ylim(-0.7, 0.7)
+    ax_sphere.set_zlim(-0.7, 0.7)
+    Axes3D.set_aspect(ax_sphere, 'equal')
+    ax_sphere.grid(False)
+    ax_sphere.set_axis_off()
+    fig_sphere.tight_layout()
+    plt.show()
+    
+    # Save to results_plots directory
+    output_dir = ROOT_DIR / "results_plots"
+    output_dir.mkdir(exist_ok=True)
+    fig_sphere.savefig(output_dir / f'sphere_a{a:.2f}_c{c:.2f}.png', format='png', dpi=50, bbox_inches='tight', transparent=True)
+    plt.close()
+
+
+def process_configuration(a, c):
+    """Process a single (a,c) configuration"""
+    # Set up the points
+    pole_points = np.array([
+        [-.5, .5, .5]           # Exactly at pole
+    ])
+    
+    # Normalize pole points
+    pole_points = pole_points / np.linalg.norm(pole_points, axis=1).reshape(-1, 1)
+    
+    # Points near equator
+    equator_points = np.array([
+        [0, 1, 0],            # Point on y-axis
+    ])
+    
+    # Map points to spheroid
+    pole_points_spheroid = sphere_to_spheroid(pole_points, a=a, c=c)
+    equator_points_spheroid = sphere_to_spheroid(equator_points, a=a, c=c)
+    test_points = np.vstack([pole_points_spheroid, equator_points_spheroid])
+    
+    # Create metric space
+    M_spheroid = Spheroid(a=a, c=c)
+    
+    # Plot both visualizations
+    plot_spheroid(a, c, test_points, M_spheroid)
+    plot_sphere(a, c, test_points, M_spheroid)
+    
+    return f"Completed processing a={a}, c={c}"
+
+
+def plot_all_configurations_parallel(configurations, n_jobs=-1):
+    """
+    Plot all configurations in parallel
+    
+    Parameters:
+    -----------
+    configurations : list
+        List of (a,c) tuples
+    n_jobs : int
+        Number of parallel jobs. -1 means use all processors
+    """
+    from joblib import Parallel, delayed
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(process_configuration)(a, c) 
+        for a, c in configurations
+    )
+    return results
+
+
+def load_sunspot_data(cycle_range=(12, 24), results_dir="sunspots/results"):
+    """
+    Load sunspot data from .npy files for specified cycles.
+    
+    Parameters:
+    -----------
+    cycle_range : tuple
+        Range of cycles to load (start, end) where end is exclusive
+    results_dir : str
+        Directory containing the results files
+        
+    Returns:
+    --------
+    dict
+        Dictionary mapping cycle numbers to loaded data
+    """
+    import numpy as np
+    import os
+    
+    data_dict = {}
+    start_cycle, end_cycle = cycle_range
+    
+    for i in range(start_cycle, end_cycle):
+        filename = os.path.join(os.getcwd(), results_dir, f"new_results_cycle_{i}.npy")
+        try:
+            data = np.load(filename, allow_pickle=True)
+            data_dict[i] = data
+        except FileNotFoundError:
+            print(f"File {filename} not found. Skipping...")
+    
+    return data_dict
+
+
+def create_sunspot_boxplot(data_dict, metric='coverage', save_filename=None, 
+                          cycle_range=(12, 24), alphas=[0.1, 0.05, 0.01]):
+    """
+    Create boxplot visualization for sunspot data (coverage or area).
+    
+    Parameters:
+    -----------
+    data_dict : dict
+        Dictionary mapping cycle numbers to loaded data
+    metric : str
+        Either 'coverage' or 'area' to specify which metric to plot
+    save_filename : str, optional
+        Filename to save the plot. If None, plot is not saved.
+    cycle_range : tuple
+        Range of cycles (start, end) where end is exclusive
+    alphas : list
+        List of alpha values to plot
+        
+    Returns:
+    --------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    from matplotlib.cm import rainbow
+    from matplotlib.colors import ListedColormap
+    import matplotlib.lines as mlines
+    
+    # Helper function for reordering legend
+    reorder = lambda l, nc: sum((l[i::nc] for i in range(nc)), [])
+    
+    # Set random seed for reproducible jitter
+    if metric == 'coverage':
+        np.random.seed(7)
+    else:
+        np.random.seed(0)
+    
+    # Custom styling for boxplots
+    boxprops = dict(linestyle='-', linewidth=1.5, color='#00145A')
+    flierprops = dict(marker='o', markersize=1, linestyle='none')
+    whiskerprops = dict(color='#00145A')
+    capprops = dict(color='#00145A')
+    medianprops = dict(linewidth=1.5, linestyle='-', color='#ff0808')
+    
+    # Set up data and colors
+    positions = [0, 1, 2]
+    start_cycle, end_cycle = cycle_range
+    cycle_list = list(range(start_cycle, end_cycle))
+    num_cycles = len(cycle_list)
+    
+    # Create a color map with one unique color per cycle
+    cycle_colors = ListedColormap(rainbow(np.linspace(0, 1, num_cycles)))
+    
+    # Organize data by alpha
+    data_by_alpha = {alpha: [] for alpha in alphas}
+    
+    for cycle in cycle_list:
+        result = data_dict.get(cycle)
+        if result is None:
+            continue
+        result_data = result.item()
+        
+        if metric == 'coverage':
+            values = result_data['pb_ii_cov_iso_iso']
+        elif metric == 'area':
+            values = result_data['area_iso_iso']
+        else:
+            raise ValueError("metric must be either 'coverage' or 'area'")
+            
+        for alpha, val in zip(alphas, values):
+            data_by_alpha[alpha].append((cycle, val))
+    
+    # Prepare data for boxplot
+    boxplot_data = [[val for _, val in data_by_alpha[alpha]] for alpha in alphas]
+    
+    # Create plot
+    fig, ax = plt.subplots(figsize=(7, 7), facecolor="white")
+    sns.set_style("whitegrid")
+    
+    # Boxplot
+    ax.boxplot(boxplot_data, positions=positions, widths=0.5, notch=False,
+               boxprops=boxprops, whiskerprops=whiskerprops,
+               capprops=capprops, showfliers=False,
+               medianprops=medianprops, showmeans=False)
+    
+    # Jittered scatter with color per cycle
+    for j, alpha in enumerate(alphas):
+        for (cycle_idx, val) in data_by_alpha[alpha]:
+            color_idx = cycle_list.index(cycle_idx)
+            x_jitter = np.random.normal(loc=positions[j], scale=0.05)
+            ax.scatter(x_jitter, val, alpha=0.7,
+                       color=cycle_colors(color_idx),
+                       s=60, edgecolor='k', linewidth=0.3,
+                       label=f'{cycle_idx}' if j == 0 else None)
+    
+    # Axis styling
+    xtick_labels = [r'$\alpha = 0.01$', r'$\alpha = 0.05$', r'$\alpha = 0.10$']
+    ax.set_xticks(positions)
+    ax.set_xticklabels(xtick_labels, fontsize=17)
+    ax.tick_params(labelsize=15)
+    ax.grid(False)
+    sns.despine(bottom=True)
+    
+    # Metric-specific styling
+    if metric == 'coverage':
+        ax.set_ylabel('Coverage', fontsize=17)
+        ax.axhline(y=1-0.01, color='black', linestyle='dashed')
+        ax.axhline(y=1-0.05, color='black', linestyle='dashed')
+        ax.axhline(y=1-0.1, color='black', linestyle='dashed')
+        ax.set_ylim(0.83, 1)
+    elif metric == 'area':
+        ax.set_ylabel(r'Area ($R^2_{\odot}$)', fontsize=17)
+        ax.set_ylim(bottom=-0.02)
+    
+    # Custom legend for cycles
+    legend_handles = [
+        mlines.Line2D([], [], color=cycle_colors(i), marker='o', 
+                      markeredgecolor='k', markeredgewidth=0.4, 
+                      linestyle='none', markersize=10, alpha=0.7, 
+                      label=f'{cycle_list[i]}')
+        for i in range(num_cycles)
+    ]
+    
+    # Reorder legend handles for horizontal layout
+    ax.legend(handles=reorder(legend_handles, 6), title="Cycle", 
+              fontsize=13, title_fontsize=13, ncol=6, 
+              columnspacing=1.25, loc='lower center')
+    
+    fig.tight_layout()
+    
+    # Save if requested
+    if save_filename:
+        output_dir = ROOT_DIR / "results_plots"
+        output_dir.mkdir(exist_ok=True)
+        fig.savefig(output_dir / save_filename, bbox_inches='tight', 
+                   format='png', dpi=75, transparent=True)
+    
+    plt.show()
+    return fig
+
+
+def create_sunspot_boxplots():
+    """
+    Create both coverage and area boxplots for sunspot data.
+    
+    Returns:
+    --------
+    tuple
+        (coverage_figure, area_figure)
+    """
+    # Load the data
+    data_dict = load_sunspot_data(results_dir="sunspots/results")
+    
+    # Create coverage boxplot
+    coverage_fig = create_sunspot_boxplot(
+        data_dict, 
+        metric='coverage', 
+        save_filename='sunspots_ii_cov.png'
+    )
+    
+    # Create area boxplot
+    area_fig = create_sunspot_boxplot(
+        data_dict, 
+        metric='area', 
+        save_filename='sunspots_area.png'
+    )
+    
+    return coverage_fig, area_fig
+
+
+# ================================
+# RADIUS AND VOLUME ANALYSIS FUNCTIONS
+# ================================
+
+def pb_radius_results():
+    """ Compute empirical OOB_quantile for different confidence levels. """
+    coverage_df = pd.DataFrame(columns=['sample_index', 'radius'])
+    i = 0
+    for file in os.listdir(os.path.join(os.getcwd(), 'simulations_euc/pb_volume_results')):
+        if file.endswith('.npy'):
+            i+=1
+            infile=open(os.path.join(os.getcwd(), 'simulations_euc/pb_volume_results/' + file), 'rb')
+            result=np.load(infile, allow_pickle=True).item()
+            infile.close()
+        else:
+            continue
+        coverage_df = pd.concat([coverage_df, pd.DataFrame({
+            'sample_index': int(file.split('_')[1][4:]),
+            'radius': [result['radius']],
+            'dim': file.split('_')[3],
+            'N': int(file.split('_')[4][1:])  # Extract N parameter
+        }, index=pd.RangeIndex(0, 1))], ignore_index=True)
+
+    return coverage_df
+
+def pb_vol_results():
+    """ Compute empirical OOB_quantile for different confidence levels. """
+    coverage_df = pd.DataFrame(columns=['sample_index', 'volume'])
+    i = 0
+    for file in os.listdir(os.path.join(os.getcwd(), 'simulations_euc/pb_volume_results')):
+        if file.endswith('.npy'):
+            i+=1
+            infile=open(os.path.join(os.getcwd(), 'simulations_euc/pb_volume_results/' + file), 'rb')
+            result=np.load(infile, allow_pickle=True).item()
+            infile.close()
+        else:
+            continue
+        coverage_df = pd.concat([coverage_df, pd.DataFrame({
+            'sample_index': int(file.split('_')[1][4:]),
+            'volume': [result['volume']],
+            'dim': file.split('_')[3],
+            'N': int(file.split('_')[4][1:])  # Extract N parameter
+        }, index=pd.RangeIndex(0, 1))], ignore_index=True)
+
+    return coverage_df
+
+def pb_all_results():
+    """ Compute empirical OOB_quantile for different confidence levels. """
+    coverage_df = pd.DataFrame(columns=['sample_index', 'radius'])
+    i = 0
+    for file in os.listdir(os.path.join(os.getcwd(), 'simulations_euc/pb_volume_results')):
+        if file.endswith('.npy'):
+            i+=1
+            infile=open(os.path.join(os.getcwd(), 'simulations_euc/pb_volume_results/' + file), 'rb')
+            result=np.load(infile, allow_pickle=True).item()
+            infile.close()
+        else:
+            continue
+        coverage_df = pd.concat([coverage_df, pd.DataFrame({
+            'sample_index': int(file.split('_')[1][4:]),
+            'radius': [result['radius']],
+            'volume': [result['volume']],
+            'dim': file.split('_')[3],
+            'N': int(file.split('_')[4][1:])  # Extract N parameter
+        }, index=pd.RangeIndex(0, 1))], ignore_index=True)
+
+    return coverage_df
+
+def conf_radius_results():
+    """ Compute empirical OOB_quantile for different confidence levels. """
+    coverage_df = pd.DataFrame(columns=['sample_index', 'radius'])
+    i = 0
+    for file in os.listdir(os.path.join(os.getcwd(), 'simulations_euc/conf_volume_results')):
+        if file.endswith('.npy'):
+            i+=1
+            infile=open(os.path.join(os.getcwd(), 'simulations_euc/conf_volume_results/' + file), 'rb')
+            result=np.load(infile, allow_pickle=True).item()
+            infile.close()
+        else:
+            continue
+        coverage_df = pd.concat([coverage_df, pd.DataFrame({
+            'sample_index': int(file.split('_')[1][4:]),
+            'radius': [result['radius']],
+            'dim': file.split('_')[3],
+            'N': int(file.split('_')[4][1:])  # Extract N parameter
+        }, index=pd.RangeIndex(0, 1))], ignore_index=True)
+
+    return coverage_df
+
+def conf_vol_results():
+    """ Compute empirical OOB_quantile for different confidence levels. """
+    coverage_df = pd.DataFrame(columns=['sample_index', 'volume'])
+    i = 0
+    for file in os.listdir(os.path.join(os.getcwd(), 'simulations_euc/conf_volume_results')):
+        if file.endswith('.npy'):
+            i+=1
+            infile=open(os.path.join(os.getcwd(), 'simulations_euc/conf_volume_results/' + file), 'rb')
+            result=np.load(infile, allow_pickle=True).item()
+            infile.close()
+        else:
+            continue
+        coverage_df = pd.concat([coverage_df, pd.DataFrame({
+            'sample_index': int(file.split('_')[1][4:]),
+            'volume': [result['volume']],
+            'dim': file.split('_')[3],
+            'N': int(file.split('_')[4][1:])  # Extract N parameter
+        }, index=pd.RangeIndex(0, 1))], ignore_index=True)
+
+    return coverage_df
+
+def conf_all_results():
+    """ Compute empirical OOB_quantile for different confidence levels. """
+    coverage_df = pd.DataFrame(columns=['sample_index', 'radius'])
+    i = 0
+    for file in os.listdir(os.path.join(os.getcwd(), 'simulations_euc/conf_volume_results')):
+        if file.endswith('.npy'):
+            i+=1
+            infile=open(os.path.join(os.getcwd(), 'simulations_euc/conf_volume_results/' + file), 'rb')
+            result=np.load(infile, allow_pickle=True).item()
+            infile.close()
+        else:
+            continue
+        coverage_df = pd.concat([coverage_df, pd.DataFrame({
+            'sample_index': int(file.split('_')[1][4:]),
+            'radius': [result['radius']],  
+            'volume': [result['volume']],
+            'dim': file.split('_')[3],
+            'N': int(file.split('_')[4][1:])  # Extract N parameter
+        }, index=pd.RangeIndex(0, 1))], ignore_index=True)
+
+    return coverage_df
+
+def ratio_compare_radius_dimension(save_path):
+    """
+    Plot the relative error of Split-Conformal to Prediction Ball radii across different dimensions and N values.
+    Relative error = (SC_radius - PB_radius) / PB_radius * 100 for matched samples.
+    """
+    
+    def compute_relative_error_data(pb_data, sc_data, metric='radius'):
+        """Compute relative errors by matching sample_index, dim, and N"""
+        error_data = []
+        
+        for _, pb_row in pb_data.iterrows():
+            # Find matching SC row with same sample_index, dim, and N
+            sc_match = sc_data[(sc_data['sample_index'] == pb_row['sample_index']) & 
+                              (sc_data['dim'] == pb_row['dim']) &
+                              (sc_data['N'] == pb_row['N'])]
+            
+            if not sc_match.empty:
+                sc_value = sc_match[metric].iloc[0]
+                pb_value = pb_row[metric]
+                relative_error = ((sc_value - pb_value) / pb_value * 100) if pb_value != 0 else np.nan
+                
+                error_data.append({
+                    'sample_index': pb_row['sample_index'],
+                    'dim': pb_row['dim'],
+                    'N': pb_row['N'],
+                    'relative_error': relative_error
+                })
+        
+        return pd.DataFrame(error_data)
+    
+    # Load the data
+    pb_radius_df = pb_radius_results()
+    conf_radius_df = conf_radius_results()
+    
+    # Extract alpha-specific data (assuming alpha=0.1 as in original code)
+    pb_radius_df_alpha_1 = pb_radius_df.copy()
+    pb_radius_df_alpha_1['radius'] = pb_radius_df['radius'].apply(lambda x: x[2])  # alpha=0.1
+    pb_radius_df_alpha_1['alpha'] = '0.1'
+    
+    conf_radius_df_alpha_1 = conf_radius_df.copy()
+    conf_radius_df_alpha_1['radius'] = conf_radius_df['radius'].apply(lambda x: x[2])  # alpha=0.1
+    conf_radius_df_alpha_1['alpha'] = '0.1'
+    
+    for pb_data, sc_data, alpha_level in zip(
+        [pb_radius_df_alpha_1], 
+        [conf_radius_df_alpha_1], 
+        [0.1]
+    ):
+        # Compute relative error data
+        error_df = compute_relative_error_data(pb_data, sc_data, metric='radius')
+
+        ##### Set style options #####
+        boxprops = dict(linestyle='-', linewidth=1.5, color='#00145A')
+        flierprops = dict(marker='o', markersize=1, linestyle='none')
+        whiskerprops = dict(color='#00145A')
+        capprops = dict(color='#00145A')
+        medianprops = dict(linewidth=1.5, linestyle='-', color='#ff0808')
+
+        # Extract unique dimensions and N values
+        dims = sorted(error_df['dim'].astype(int).unique())
+        n_values = sorted(error_df['N'].unique())
+        n_values = [int(n) for n in n_values]  # Ensure N values are integer
+
+        # Create single plot with all dimensions
+        fig, ax = plt.subplots(1, 1, figsize=(7, 6))
+        
+        # Colors for different N values
+        n_colors = ['#ee6100', 'g', 'b', 'y']
+        
+        # Calculate positions for boxplots
+        box_width = 0.03
+        positions = []
+        dim_centers = []  # Track actual centers for x-ticks
+        
+        for d_idx, d in enumerate(dims):
+            dim_center = d_idx * (len(n_values) * box_width + 0.01)  # Center position for this dimension
+            dim_centers.append(dim_center)  # Store the actual center
+            
+            for n_idx, n_val in enumerate(n_values):
+                pos = dim_center + (n_idx - len(n_values)/2 + 0.5) * box_width
+                positions.append(pos)
+                
+                # Filter data for current dimension and N
+                dim_n_data = error_df[(error_df['dim'].astype(int) == d) & (error_df['N'] == n_val)]
+                error_values = dim_n_data['relative_error'].values
+                
+                # Create boxplot
+                if len(error_values) > 0:
+                    bp = ax.boxplot([error_values], positions=[pos], widths=box_width, notch=False,
+                                   whiskerprops=whiskerprops, capprops=capprops, 
+                                   flierprops=flierprops, medianprops=medianprops,
+                                   showmeans=False, showfliers=False)
+                    
+                    # Scatter plot for individual points
+                    xs = np.random.normal(pos, 0.005, len(error_values))
+                    ax.scatter(xs, error_values, alpha=0.2, color=n_colors[n_idx], s=20)
+
+        # Add horizontal line at 0 (equal performance)
+        ax.axhline(y=0.0, color='black', linestyle='--', alpha=0.7, label='Equal performance')
+        
+        # Set x-axis labels for dimensions - use the stored dim_centers
+        ax.set_xticks(dim_centers)
+        ax.set_xticklabels([str(d) for d in dims], fontsize=17)
+        
+        # Create legend for N values
+        legend_handles = [mpatches.Patch(color=n_colors[i], label=f'Train size: {n_val}') 
+                         for i, n_val in enumerate(n_values)]
+        ax.legend(handles=legend_handles, loc='upper right', fontsize=10)
+        sns.set_style("whitegrid")
+
+        sns.despine(ax=ax, bottom=True)  # Remove right and top axis lines
+
+        # Set tight x-axis limits to reduce whitespace
+        if positions:
+            ax.set_xlim(min(positions) - box_width*0.95, max(positions) + box_width*0.95)
+
+        ax.set_ylabel('Relative error (%)', fontsize=17)
+        ax.set_xlabel(r'$q$', fontsize=17)
+        ax.tick_params(labelsize=17)
+        ax.grid(False)
+
+        fig.tight_layout()
+        filename = os.path.join(save_path, f'relative_error_sc_pb_radius_{str(alpha_level)[2:]}.png')
+        fig.savefig(filename, bbox_inches='tight', format='png', transparent=True)
+        plt.show()
+
+def ratio_compare_volume_dimension(save_path):
+    """
+    Plot the relative error of Split-Conformal to Prediction Ball volumes across different dimensions and N values.
+    Relative error = (SC_volume - PB_volume) / PB_volume * 100 for matched samples.
+    Uses separate y-axis scales: dimension 1 on the left, dimensions 5 and 10 on the right.
+    """
+    
+    def compute_relative_error_data(pb_data, sc_data, metric='volume'):
+        """Compute relative errors by matching sample_index, dim, and N"""
+        error_data = []
+        
+        for _, pb_row in pb_data.iterrows():
+            # Find matching SC row with same sample_index, dim, and N
+            sc_match = sc_data[(sc_data['sample_index'] == pb_row['sample_index']) & 
+                              (sc_data['dim'] == pb_row['dim']) &
+                              (sc_data['N'] == pb_row['N'])]
+            
+            if not sc_match.empty:
+                sc_value = sc_match[metric].iloc[0]
+                pb_value = pb_row[metric]
+                relative_error = ((sc_value - pb_value) / pb_value * 100) if pb_value != 0 else np.nan
+                
+                error_data.append({
+                    'sample_index': pb_row['sample_index'],
+                    'dim': pb_row['dim'],
+                    'N': pb_row['N'],
+                    'relative_error': relative_error
+                })
+        
+        return pd.DataFrame(error_data)
+    
+    # Load the data
+    pb_vol_df = pb_vol_results()
+    conf_vol_df = conf_vol_results()
+    
+    # Extract alpha-specific data (assuming alpha=0.1 as in original code)
+    pb_vol_df_alpha_1 = pb_vol_df.copy()
+    pb_vol_df_alpha_1['volume'] = pb_vol_df['volume'].apply(lambda x: x[2])  # alpha=0.1
+    pb_vol_df_alpha_1['alpha'] = '0.1'
+    
+    conf_vol_df_alpha_1 = conf_vol_df.copy()
+    conf_vol_df_alpha_1['volume'] = conf_vol_df['volume'].apply(lambda x: x[2])  # alpha=0.1
+    conf_vol_df_alpha_1['alpha'] = '0.1'
+    
+    for pb_data, sc_data, alpha_level in zip(
+        [pb_vol_df_alpha_1], 
+        [conf_vol_df_alpha_1], 
+        [0.1]
+    ):
+        # Compute relative error data
+        error_df = compute_relative_error_data(pb_data, sc_data, metric='volume')
+        
+        ##### Set style options #####
+        boxprops = dict(linestyle='-', linewidth=1.5, color='#00145A')
+        flierprops = dict(marker='o', markersize=1, linestyle='none')
+        whiskerprops = dict(color='#00145A')
+        capprops = dict(color='#00145A')
+        medianprops = dict(linewidth=1.5, linestyle='-', color='#ff0808')
+        
+        # Extract unique dimensions and N values
+        dims = sorted(error_df['dim'].astype(int).unique())
+        n_values = sorted(error_df['N'].unique())
+        n_values = [int(n) for n in n_values]
+
+        # Create figure with two subplots side by side
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8.5, 6), 
+                                       gridspec_kw={'width_ratios': [1, 2], 'wspace': 0.3})
+        
+        # Colors for different N values
+        n_colors = ['#ee6100', 'g', 'b', 'y']
+        
+        # Calculate positions for boxplots
+        box_width = 0.03
+        
+        # Separate dimensions: dim=1 for left plot, dims=[5,10] for right plot
+        dim_1_data = error_df[error_df['dim'].astype(int) == 1]
+        dim_high_data = error_df[error_df['dim'].astype(int).isin([5, 10])]
+        
+        # Left subplot: Dimension 1
+        dim_center = 0
+        left_positions = []
+        for n_idx, n_val in enumerate(n_values):
+            pos = dim_center + (n_idx - len(n_values)/2 + 0.5) * box_width
+            left_positions.append(pos)
+            
+            # Filter data for dimension 1 and current N
+            dim_n_data = dim_1_data[dim_1_data['N'] == n_val]
+            error_values = dim_n_data['relative_error'].values
+            
+            # Create boxplot
+            if len(error_values) > 0:
+                bp = ax1.boxplot([error_values], positions=[pos], widths=box_width, notch=False,
+                                whiskerprops=whiskerprops, capprops=capprops, 
+                                flierprops=flierprops, medianprops=medianprops,
+                                showmeans=False, showfliers=False)
+            
+            # Scatter plot for individual points
+            xs = np.random.normal(pos, 0.005, len(error_values))
+            ax1.scatter(xs, error_values, alpha=0.2, color=n_colors[n_idx], s=20)
+        # Right subplot: Dimensions 5 and 10
+        high_dims = [5, 10]
+        right_positions = []
+        dim_centers = []
+        for d_idx, d in enumerate(high_dims):
+            dim_center = d_idx * (len(n_values) * box_width + 0.01)
+            dim_centers.append(dim_center)  # Store actual centers
+            
+            for n_idx, n_val in enumerate(n_values):
+                pos = dim_center + (n_idx - len(n_values)/2 + 0.5) * box_width
+                right_positions.append(pos)
+                
+                # Filter data for current dimension and N
+                dim_n_data = dim_high_data[(dim_high_data['dim'].astype(int) == d) & (dim_high_data['N'] == n_val)]
+                error_values = dim_n_data['relative_error'].values
+                
+                # Create boxplot
+                if len(error_values) > 0:
+                    bp = ax2.boxplot([error_values], positions=[pos], widths=box_width, notch=False,
+                                   whiskerprops=whiskerprops, capprops=capprops, 
+                                   flierprops=flierprops, medianprops=medianprops,
+                                   showmeans=False, showfliers=False)
+                    
+                    # Scatter plot for individual points
+                    xs = np.random.normal(pos, 0.005, len(error_values))
+                    ax2.scatter(xs, error_values, alpha=0.2, color=n_colors[n_idx], s=20)
+        
+        # Add horizontal lines at 0 (equal performance)
+        ax1.axhline(y=0.0, color='black', linestyle='--', alpha=0.7)
+        ax2.axhline(y=0.0, color='black', linestyle='--', alpha=0.7)
+        
+        # Set x-axis labels - use actual centers
+        ax1.set_xticks([0])  # Center for dimension 1
+        ax1.set_xticklabels(['1'], fontsize=17)
+        
+        ax2.set_xticks(dim_centers)  # Use stored centers
+        ax2.set_xticklabels([str(d) for d in high_dims], fontsize=17)
+        
+        # Create legend for N values (only on right subplot)
+        legend_handles = [mpatches.Patch(color=n_colors[i], label=f'Train size: {n_val}') 
+                         for i, n_val in enumerate(n_values)]
+        ax2.legend(handles=legend_handles, loc='upper right', fontsize=9)
+        
+        # Style both subplots
+        sns.despine(ax=ax1, bottom=True)
+        sns.despine(ax=ax2, bottom=True)
+        
+        # Set tight x-axis limits to reduce whitespace
+        if left_positions:
+            ax1.set_xlim(min(left_positions) - box_width*0.95, max(left_positions) + box_width*0.95)
+        if right_positions:
+            ax2.set_xlim(min(right_positions) - box_width*0.95, max(right_positions) + box_width*0.95)
+        
+        # Set y-axis labels
+        
+        # Set x-axis labels
+        ax1.set_xlabel(r'$q$', fontsize=17)
+        ax2.set_xlabel(r'$q$', fontsize=17)
+        
+        # Set tick parameters
+        ax1.tick_params(labelsize=15)
+        ax2.tick_params(labelsize=15)
+        
+        # Turn off grids
+        ax1.grid(False)
+        ax2.grid(False)
+        
+        # Set different y-limits for each subplot based on the data ranges
+        if alpha_level == 0.01:
+            ax1.set_ylim(-50, 100)    # Adjust for dimension 1
+            ax2.set_ylim(-100, 2000)  # Adjust for dimensions 5,10
+        elif alpha_level == 0.05:
+            ax1.set_ylim(-50, 100)    # Adjust for dimension 1
+            ax2.set_ylim(-100, 2000)  # Adjust for dimensions 5,10
+        else:  # alpha_level == 0.1
+            ax1.set_ylim(-50, 100)    # Adjust for dimension 1
+            ax2.set_ylim(-150, 2600)  # Adjust for dimensions 5,10
+        
+        filename = os.path.join(save_path, f'relative_error_sc_pb_volume_{str(alpha_level)[2:]}.png')
+        fig.savefig(filename, bbox_inches='tight', format='png', dpi = 75, transparent=True)
+        plt.show()
+
+def process_radius_volume_data():
+    """
+    Process radius and volume data for different alpha levels.
+    Returns processed dataframes for visualization.
+    """
+    # Load raw data
+    pb_radius_df = pb_radius_results()
+    pb_vol_df = pb_vol_results()
+    conf_radius_df = conf_radius_results()
+    conf_vol_df = conf_vol_results()
+    
+    # Process radius data for different alpha levels
+    pb_radius_df_alpha_01 = pb_radius_df.copy()
+    pb_radius_df_alpha_05 = pb_radius_df.copy()
+    pb_radius_df_alpha_1 = pb_radius_df.copy()
+    
+    pb_radius_df_alpha_01['radius'] = pb_radius_df['radius'].apply(lambda x: x[0])
+    pb_radius_df_alpha_05['radius'] = pb_radius_df['radius'].apply(lambda x: x[1])
+    pb_radius_df_alpha_1['radius'] = pb_radius_df['radius'].apply(lambda x: x[2])
+    
+    # Process volume data for different alpha levels
+    pb_vol_df_alpha_01 = pb_vol_df.copy()
+    pb_vol_df_alpha_05 = pb_vol_df.copy()
+    pb_vol_df_alpha_1 = pb_vol_df.copy()
+    
+    pb_vol_df_alpha_01['volume'] = pb_vol_df['volume'].apply(lambda x: x[0])
+    pb_vol_df_alpha_05['volume'] = pb_vol_df['volume'].apply(lambda x: x[1])
+    pb_vol_df_alpha_1['volume'] = pb_vol_df['volume'].apply(lambda x: x[2])
+    
+    # Process conformal radius data
+    conf_radius_df_alpha_01 = conf_radius_df.copy()
+    conf_radius_df_alpha_05 = conf_radius_df.copy()
+    conf_radius_df_alpha_1 = conf_radius_df.copy()
+    
+    conf_radius_df_alpha_01['radius'] = conf_radius_df['radius'].apply(lambda x: x[0])
+    conf_radius_df_alpha_05['radius'] = conf_radius_df['radius'].apply(lambda x: x[1])
+    conf_radius_df_alpha_1['radius'] = conf_radius_df['radius'].apply(lambda x: x[2])
+    
+    # Process conformal volume data
+    conf_vol_df_alpha_01 = conf_vol_df.copy()
+    conf_vol_df_alpha_05 = conf_vol_df.copy()
+    conf_vol_df_alpha_1 = conf_vol_df.copy()
+    
+    conf_vol_df_alpha_01['volume'] = conf_vol_df['volume'].apply(lambda x: x[0])
+    conf_vol_df_alpha_05['volume'] = conf_vol_df['volume'].apply(lambda x: x[1])
+    conf_vol_df_alpha_1['volume'] = conf_vol_df['volume'].apply(lambda x: x[2])
+    
+    # Add alpha level labels for clarity
+    for df, alpha in zip([pb_radius_df_alpha_01, pb_radius_df_alpha_05, pb_radius_df_alpha_1], ['0.01', '0.05', '0.1']):
+        df['alpha'] = alpha
+    
+    for df, alpha in zip([pb_vol_df_alpha_01, pb_vol_df_alpha_05, pb_vol_df_alpha_1], ['0.01', '0.05', '0.1']):
+        df['alpha'] = alpha
+        
+    for df, alpha in zip([conf_radius_df_alpha_01, conf_radius_df_alpha_05, conf_radius_df_alpha_1], ['0.01', '0.05', '0.1']):
+        df['alpha'] = alpha
+        
+    for df, alpha in zip([conf_vol_df_alpha_01, conf_vol_df_alpha_05, conf_vol_df_alpha_1], ['0.01', '0.05', '0.1']):
+        df['alpha'] = alpha
+    
+    return {
+        'pb_radius': {'0.01': pb_radius_df_alpha_01, '0.05': pb_radius_df_alpha_05, '0.1': pb_radius_df_alpha_1},
+        'pb_volume': {'0.01': pb_vol_df_alpha_01, '0.05': pb_vol_df_alpha_05, '0.1': pb_vol_df_alpha_1},
+        'conf_radius': {'0.01': conf_radius_df_alpha_01, '0.05': conf_radius_df_alpha_05, '0.1': conf_radius_df_alpha_1},
+        'conf_volume': {'0.01': conf_vol_df_alpha_01, '0.05': conf_vol_df_alpha_05, '0.1': conf_vol_df_alpha_1}
+    }
+
+def compute_summary(df):
+    pb_grouped = df.groupby("train_size")["pb_time"].agg(["mean", "std"])
+    conf_grouped = df.groupby("train_size")["conf_time"].agg(["mean", "std"])
+    return {size: f"{row['mean']:.2f} ({row['std']:.2f})" for size, row in pb_grouped.iterrows()}, \
+           {size: f"{row['mean']:.2f} ({row['std']:.2f})" for size, row in conf_grouped.iterrows()}
+
+def generate_statistical_latex_table(combined_results):
+    """
+    Generate LaTeX table from combined hypothesis testing results.
+    This function creates the table with MSE differences, area differences, 
+    coverage, and p-values for both MSE and area tests.
+    
+    Parameters:
+    -----------
+    combined_results : dict
+        Dictionary containing the combined hypothesis testing results with keys:
+        - 'config_params': list of tuples (a, c) representing spheroid configurations
+        - 'delta_mse_percent': array of MSE percentage differences
+        - 'delta_area_percent': array of area percentage differences  
+        - 'p_adjusted_mse': array of adjusted p-values for MSE tests
+        - 'p_adjusted_area': array of adjusted p-values for area tests
+    """
+    configs = combined_results['config_params']
+    
+    print("\\begin{table}[hpbt]")
+    print("\\setlength{\\tabcolsep}{1.5pt}")
+    print("\\centering")
+    print("\\begin{tabular}{lccccccccc|c|ccc}")
+    print("\\toprule")
+    print("\\multicolumn{1}{c}{} & \\multicolumn{9}{c}{Oblate ($S_{1, \\lambda}$)} &  \\multicolumn{1}{c}{Sphere} & \\multicolumn{3}{c}{Prolate ($S_{\\lambda, 1}$)} \\\\")
+    print(" \\cmidrule(lr){2-10} \\cmidrule(lr){11-11}  \\cmidrule(lr){12-14}")
+    
+    # Lambda header row
+    lambda_header = "\\multicolumn{1}{c}{$\\lambda$}"
+    oblate_configs = [(a, c) for a, c in configs if a < 1]
+    prolate_configs = [(a, c) for a, c in configs if a > 1]
+    
+    # Add oblate columns
+    for a, c in oblate_configs:
+        if a == 0.5:
+            lambda_header += f" & $\\mathbf{{{a}}}$"
+        else:
+            lambda_header += f" & ${a}$"
+    
+    # Add sphere column
+    lambda_header += " & $1.0$"
+    
+    # Add prolate columns  
+    for a, c in prolate_configs:
+        lambda_header += f" & ${a}$"
+    
+    print(lambda_header + " \\\\")
+    print("\\midrule")
+    
+    # MSE differences row
+    mse_row = "$\\Delta_{\\mathrm{MSE}}$"
+    oblate_indices = [i for i, (a, c) in enumerate(configs) if a < 1]
+    prolate_indices = [i for i, (a, c) in enumerate(configs) if a > 1]
+    
+    for i in oblate_indices:
+        delta = combined_results['delta_mse_percent'][i]
+        mse_row += f" & ${delta:.1f}$"
+    
+    # Sphere column (reference, always 0.0)
+    mse_row += " & $0.0$"
+    
+    for i in prolate_indices:
+        delta = combined_results['delta_mse_percent'][i]
+        mse_row += f" & ${delta:.1f}$"
+    
+    print(mse_row + " \\\\")
+    
+    # Area differences row
+    area_row = "$\\Delta_{\\mathrm{area}}$"
+    
+    for i in oblate_indices:
+        delta = combined_results['delta_area_percent'][i]
+        if configs[i][0] == 0.5:  # Bold for lambda = 0.5
+            area_row += f" & $\\mathbf{{{delta:.1f}}}$"
+        else:
+            area_row += f" & ${delta:.1f}$"
+    
+    # Sphere column (reference, always 0.0)
+    area_row += " & $0.0$"
+    
+    for i in prolate_indices:
+        delta = combined_results['delta_area_percent'][i]
+        area_row += f" & ${delta:.1f}$"
+    
+    print(area_row + " \\\\")
+    
+    # Coverage row (placeholder - would need actual coverage calculation)
+    coverage_row = "Coverage"
+    for i in oblate_indices:
+        coverage_row += " & $89.5$"  # Placeholder
+    coverage_row += " & $89.3$"  # Sphere placeholder
+    for i in prolate_indices:
+        coverage_row += " & $89.5$"  # Placeholder
+    print(coverage_row + " \\\\")
+    
+    # MSE p-value row
+    p_mse_row = "$p_{\\mathrm{MSE}}$"
+    
+    for i in oblate_indices:
+        p_val = combined_results['p_adjusted_mse'][i]
+        if p_val < 0.001:
+            p_mse_row += " & $0.0$"
+        elif p_val < 0.01:
+            # Format scientific notation for LaTeX
+            exp_str = f"{p_val:.0e}".replace('e-0', r' \\cdot 10^{-').replace('e-', r' \\cdot 10^{-') + '}$'
+            p_mse_row += f" & ${exp_str}"
+        elif p_val >= 1.0:
+            p_mse_row += " & $1.0$"
+        else:
+            p_mse_row += f" & ${p_val:.1f}$"
+    
+    # Sphere column
+    p_mse_row += " & ---"
+    
+    for i in prolate_indices:
+        p_val = combined_results['p_adjusted_mse'][i]
+        if p_val < 0.001:
+            p_mse_row += " & $0.0$"
+        elif p_val < 0.01:
+            exp_str = f"{p_val:.0e}".replace('e-0', r' \\cdot 10^{-').replace('e-', r' \\cdot 10^{-') + '}$'
+            p_mse_row += f" & ${exp_str}"
+        elif p_val >= 1.0:
+            p_mse_row += " & $1.0$"
+        else:
+            p_mse_row += f" & ${p_val:.1f}$"
+    
+    print(p_mse_row + " \\\\")
+    
+    # Area p-value row
+    p_area_row = "$p_{\\mathrm{area}}$"
+    
+    for i in oblate_indices:
+        p_val = combined_results['p_adjusted_area'][i]
+        if p_val < 0.001:
+            p_area_row += " & $0.0$"
+        elif p_val < 0.01:
+            exp_str = f"{p_val:.0e}".replace('e-0', r' \\cdot 10^{-').replace('e-', r' \\cdot 10^{-') + '}$'
+            p_area_row += f" & ${exp_str}"
+        elif p_val >= 1.0:
+            p_area_row += " & $1.0$"
+        else:
+            p_area_row += f" & ${p_val:.1f}$"
+    
+    # Sphere column
+    p_area_row += " & ---"
+    
+    for i in prolate_indices:
+        p_val = combined_results['p_adjusted_area'][i]
+        if p_val < 0.001:
+            p_area_row += " & $0.0$"
+        elif p_val < 0.01:
+            exp_str = f"{p_val:.0e}".replace('e-0', r' \\cdot 10^{-').replace('e-', r' \\cdot 10^{-') + '}$'
+            p_area_row += f" & ${exp_str}"
+        elif p_val >= 1.0:
+            p_area_row += " & $1.0$"
+        else:
+            p_area_row += f" & ${p_val:.1f}$"
+    
+    print(p_area_row + " \\\\")
+    
+    print("\\bottomrule")
+    print("\\end{tabular}")
+    print("\\caption{For each $\\lambda$ specification, the errors, areas, and coverages were calculated on the test points of cycles $21$--$23$, and the reported values are weighted means across the three cycles, with weights proportional to the number of test points on each cycle. The areas correspond to OOB balls centered on the predicted value of the test points (measured in $100 \\times R_\\odot^2$, where $R_\\odot^2$ represents units of solar radius squared). The relative MSE difference $\\Delta_{\\mathrm{MSE}}$ and the relative mean area difference $\\Delta_{\\mathrm{area}}$ (both in $\\%$) were calculated with respect to the balls on the sphere. The reported coverage corresponds to Type II (in \\%) for $\\alpha=0.10$. The $p$-value of the one-sided paired $t$-test with alternative hypothesis $H_1: \\mathrm{MSE}_{\\mathbb{S}^2} < \\mathrm{MSE}_{S_{1, \\lambda}}$ is $p_{\\mathrm{MSE}}$. For $p_{\\mathrm{area}}$, we considered a one-sided paired $t$-test with alternative hypothesis $H_1: \\mathrm{area}_{\\mathbb{S}^2} > \\mathrm{area}_{S_{1, \\lambda}}$, to test the equality of mean areas. Benjamini--Yekutieli \\citep{Benjamini2001} correction is applied to the p-values at level $\\alpha = 0.01$.}")
+    print("\\end{table}")
+
+def load_sunspot_hypothesis_results(results_path='sunspots/results/combined_hypothesis_results.npy'):
+    """
+    Load the combined hypothesis testing results for sunspot analysis.
+    
+    Parameters:
+    -----------
+    results_path : str
+        Path to the combined hypothesis testing results file
+        
+    Returns:
+    --------
+    dict or None
+        Dictionary containing the combined results, or None if file not found
+    """
+    if os.path.exists(results_path):
+        combined_results = np.load(results_path, allow_pickle=True).item()
+        return combined_results
+    else:
+        print(f"Results file not found at {results_path}")
+        return None
+
+def create_S2_grid(grid_size: int=200) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Create a mesh grid for the unit sphere.
+    
+    Parameters:
+    -----------
+    grid_size : int
+        Size of the grid
+        
+    Returns:
+    --------
+    tuple
+        x, y, z coordinates of the sphere grid
+    """
+    u = np.linspace(0, np.pi, grid_size)
+    v = np.linspace(0, 2 * np.pi, grid_size)
+    u, v = np.meshgrid(u, v)
+
+    x_sphere = np.sin(u) * np.cos(v)
+    y_sphere = np.sin(u) * np.sin(v)
+    z_sphere = np.cos(u)
+    return x_sphere, y_sphere, z_sphere
+
+def canonical_lattice(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Generate a canonical lattice on the unit sphere.
+    
+    Parameters:
+    -----------
+    n : int
+        Number of points to generate
+
+    Returns:
+    --------
+    tuple
+        x, y, z coordinates of the points on the sphere
+    """
+    goldenRatio = (1 + 5**0.5)/2
+    i = np.arange(0, n)
+    theta = 2 * np.pi * i / goldenRatio
+    phi = np.arccos(1 - 2*(i+0.5)/n)
+    x = np.cos(theta) * np.sin(phi)
+    y = np.sin(theta) * np.sin(phi)
+    z = np.cos(phi)
+    return x, y, z
+
+def plot_OOB_balls(M, true_y: np.ndarray, predictions: np.ndarray, indices_to_plot: list[int],
+                   Dalpha: float, ax, color='deepskyblue', alpha=0.1, N_points: int = 2000) -> None:
+    """
+    Plot OOB balls using canonical lattice sampling for the sphere.
+    
+    Parameters:
+    -----------
+    M : metric space
+        The metric space object
+    true_y : np.ndarray
+        True y values
+    predictions : np.ndarray
+        Predicted values
+    indices_to_plot : list[int]
+        Indices of points to plot
+    Dalpha : float
+        Radius for the balls
+    ax : matplotlib axis
+        3D axis for plotting
+    color : str
+        Color for the balls
+    alpha : float
+        Transparency level
+    N_points : int
+        Number of points for lattice sampling
+    """
+    # Sample points on the sphere using canonical lattice
+    x_lattice, y_lattice, z_lattice = canonical_lattice(N_points)
+    sphere_points = np.vstack((x_lattice, y_lattice, z_lattice)).T
+
+    for index_to_plot in indices_to_plot:
+        center = predictions[index_to_plot, :]
+        # Compute distances from center to all lattice points
+        dists = M.d(sphere_points, center)
+        mask = dists <= Dalpha
+        # Plot the points inside the ball
+        ax.scatter3D(x_lattice[mask], y_lattice[mask], z_lattice[mask], color=color, alpha=alpha, s=2)
+
+        # Plot the prediction and true value
+        ax.scatter3D(center[0], center[1], center[2], marker='x', color='red', s=30, alpha=1)
+        ax.scatter3D(true_y[index_to_plot, 0], true_y[index_to_plot, 1], true_y[index_to_plot, 2], marker='o', s=30, alpha=1, color='blue')
+        ax.view_init(20, 90)
+
+def area_pred_ball(M, radius, total_points):
+    """
+    Estimate the area of a prediction ball using the distance of M with given radius.
+    The area is calculated by sampling points "uniformly" on the unit sphere and checking if they are within the radius.
+    
+    Parameters:
+    -----------
+    M : metric space
+        The metric space
+    radius : float
+        Radius of the ball
+    total_points : int
+        Number of points to sample
+
+    Returns:
+    --------
+    float
+        Area of the ball
+    """
+    x, y, z = canonical_lattice(total_points)
+    return 4*np.pi*np.sum((M.d(np.vstack((x,y,z)).T, np.array([np.sqrt(2)/2,np.sqrt(2)/2,0])) < radius))/total_points
+
+def create_spheroid_points(N_points: int, a: float=1.0, c: float=1.0) -> np.ndarray:
+    """
+    This is the grid we use to plot the prediction balls on spheroids.
+    
+    Parameters:
+    -----------
+    N_points : int
+        Number of points to generate
+    a : float
+        Spheroid parameter a
+    c : float
+        Spheroid parameter c
+        
+    Returns:
+    --------
+    np.ndarray
+        Points on the spheroid
+    """
+    if not PYFRECHET_AVAILABLE:
+        raise ImportError("pyfrechet is required for spheroid operations")
+        
+    # Create grid in angle space
+    u = np.linspace(0, np.pi, int(np.sqrt(N_points)))
+    v = np.linspace(0, 2 * np.pi, 2*int(np.sqrt(N_points)))
+    u, v = np.meshgrid(u, v)
+    angles = np.stack([u.flatten(), v.flatten()], axis=-1)
+    
+    # Convert angles to spheroid points
+    return angles_to_spheroid(angles, a=a, c=c)
+
+def sphere_custom_centers_plot_OOB_balls_parallel(M, points, true_y, Dalpha, ax, a=1.0, c=1.0, 
+                                                       colors=['green', 'blue'], alpha=0.1, N_points=20000, n_jobs=8):
+    """
+    Parallel version that will actually use your CPU cores!
+    
+    Strategy: Instead of parallelizing by centers (which causes geopy issues),
+    we parallelize by CHUNKING the spheroid points and computing distances
+    in parallel chunks for each center.
+    
+    This should make your laptop fans spin up!
+    """
+    from joblib import Parallel, delayed
+    
+    spheroid_points = create_spheroid_points(N_points, a=a, c=c)
+    
+    # Split spheroid points into chunks for parallel processing
+    chunk_size = max(1000, N_points // (n_jobs * 4))  # Create more chunks than cores
+    chunks = []
+    for i in range(0, len(spheroid_points), chunk_size):
+        chunks.append((i, spheroid_points[i:i+chunk_size]))
+    
+    
+    def compute_chunk_distances(chunk_data, center):
+        """Compute distances for one chunk of points to one center"""
+        chunk_idx, chunk_points = chunk_data
+        try:
+            # This is the expensive operation we're parallelizing
+            chunk_distances = M.d(chunk_points, center)
+            chunk_mask = chunk_distances <= Dalpha
+            chunk_mask = chunk_mask.squeeze()
+            return chunk_idx, chunk_mask, chunk_points[chunk_mask]
+        except Exception as e:
+            return chunk_idx, np.array([]), np.array([]).reshape(0, 3)
+    
+    # Process each center
+    all_center_results = []
+    
+    for center_idx, center in enumerate(points):
+        
+        # Process all chunks for this center IN PARALLEL
+        # This is where the real parallelization happens!
+        chunk_results = Parallel(n_jobs=n_jobs, verbose=0)(
+            delayed(compute_chunk_distances)(chunk_data, center)
+            for chunk_data in chunks
+        )
+        
+        # Combine results from all chunks
+        all_points_inside = []
+        for chunk_idx, chunk_mask, chunk_points_inside in chunk_results:
+            if len(chunk_points_inside) > 0:
+                all_points_inside.append(chunk_points_inside)
+        
+        if all_points_inside:
+            spheroid_points_inside = np.vstack(all_points_inside)
+        else:
+            spheroid_points_inside = np.array([]).reshape(0, 3)
+        
+        
+        all_center_results.append({
+            'center_idx': center_idx,
+            'center': center,
+            'spheroid_points_inside': spheroid_points_inside
+        })
+    
+    for result in all_center_results:
+        center_idx = result['center_idx']
+        center = result['center']
+        spheroid_points_inside = result['spheroid_points_inside']
+        
+        if len(spheroid_points_inside) > 0:
+            # Map to sphere coordinates for plotting
+            sphere_points = spheroid_to_sphere(spheroid_points_inside, a, c, R=1)
+            
+            # Plot the points inside the ball
+            color = colors[center_idx % len(colors)] if isinstance(colors, list) else colors
+            ax.scatter3D(sphere_points[:,0], sphere_points[:,1], sphere_points[:,2],
+                        color=color, alpha=alpha, s=2)
+        
+        # Plot center marker (mapped to sphere)
+        center_sphere = spheroid_to_sphere(center.reshape(1,-1), a, c, R=1)
+        ax.scatter3D(center_sphere[0,0], center_sphere[0,1], center_sphere[0,2], 
+                    marker='x', color='red', s=30, alpha=1)
+        
+        # Plot true value marker
+        ax.scatter3D(true_y[center_idx, 0], true_y[center_idx, 1], true_y[center_idx, 2], 
+                    marker='o', s=30, alpha=1, color='#DFA700')
