@@ -27,3 +27,10 @@ Below is a simple scheme of the distribution of the library:
 ├── simulations_*/              # Raw simulation data for each metric space.
 └── requirements.txt            # Python (3.9.9) dependencies.
 ```
+
+## How to reproduce the result files
+Many of the experiments were conducted in a cluster. For this reason, the data and the results are divided by blocks. To run `metricspace_results.py` files, do
+```
+python metricspace_results.py b
+```
+where b is the block number.
