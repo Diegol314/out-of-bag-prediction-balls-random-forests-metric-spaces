@@ -637,7 +637,7 @@ def euclidean_type_ii_analysis(coverage_df, save_individual=True):
                 
                 # Save the individual plot
                 filename = output_dir / f'euclidean_type_ii_coverage_sigma_{str(sigma).replace(".", "")}_alpha_{str(alpha_level)[2:]}.png'
-                fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=75, transparent=True)
+                fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=125, transparent=True)
                 plt.close(fig_individual)  # Close individual figure to free memory
 
     fig.tight_layout()
@@ -1172,7 +1172,7 @@ def sphere_H2_type_ii_analysis(pb_coverage_df, space, save_individual=True):
             else:  # space == 'hyperboloid'
                 filename = output_dir / f'hyperboloid_type_ii_coverage_{str(alpha_level)[2:]}.png'
 
-            fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=75, transparent=True)
+            fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=125, transparent=True)
             plt.close(fig_individual)  # Close individual figure to free memory
 
 def sphere_H2_type_iv_analysis(pb_coverage_df, space, save_individual=True):
@@ -1346,7 +1346,7 @@ def sphere_H2_type_iv_analysis(pb_coverage_df, space, save_individual=True):
             else:  # space == 'hyperboloid'
                 filename = output_dir / f'hyperboloid_type_iv_coverage_{str(alpha_level)[2:]}.png'
 
-            fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=75, transparent=True)
+            fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=125, transparent=True)
             plt.close(fig_individual)  # Close individual figure to free memory
 
 def sphere_H2_radius_analysis(pb_coverage_df, space='sphere', save_individual=True):
@@ -1543,7 +1543,7 @@ def sphere_H2_radius_analysis(pb_coverage_df, space='sphere', save_individual=Tr
             
             # Save the individual plot
             filename = output_dir / f'{space}_radius_vs_kappa_{str(alpha_level)[2:]}.png'
-            fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=75, transparent=True)
+            fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=125, transparent=True)
             plt.close(fig_individual)  # Close individual figure to free memory
 
 # ================================
@@ -2001,6 +2001,85 @@ def spd_type_ii_analysis(SPD_coverage_df, save_individual=True):
     plt.show()
     fig.tight_layout()
 
+    # Save individual plots if requested
+    if save_individual:
+        output_dir = ROOT_DIR / "results_plots"
+        output_dir.mkdir(exist_ok=True)
+        
+        # Create individual AI plots for each alpha level
+        for alpha_idx, (df_5_data, df_15_data, alpha_level) in enumerate(zip(
+            [ai_ii_SPD_coverage_df_df_5_alpha_01, ai_ii_SPD_coverage_df_df_5_alpha_05, ai_ii_SPD_coverage_df_df_5_alpha_1], 
+            [ai_ii_SPD_coverage_df_df_15_alpha_01, ai_ii_SPD_coverage_df_df_15_alpha_05, ai_ii_SPD_coverage_df_df_15_alpha_1], 
+            [0.01, 0.05, 0.1]
+        )):
+            # Create individual figure
+            fig_individual, ax = plt.subplots(1, 1, figsize=(7, 7), facecolor="white")
+
+            # Extract data for each training size
+            train_sizes = [50, 100, 200, 500]
+            df_5_boxplot_data = [df_5_data[df_5_data['train_size'] == size]['ai_ii_cov'].values for size in train_sizes]
+            df_15_boxplot_data = [df_15_data[df_15_data['train_size'] == size]['ai_ii_cov'].values for size in train_sizes]
+
+            # Create boxplots with adjusted positions
+            positions_df_5 = np.array(range(len(train_sizes))) - 0.2
+            positions_df_15 = np.array(range(len(train_sizes))) + 0.2
+
+            ax.boxplot(df_5_boxplot_data, positions=positions_df_5, widths=0.3, notch=False, 
+                       boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                       whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                       showfliers=False,
+                       medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+                       
+            ax.boxplot(df_15_boxplot_data, positions=positions_df_15, widths=0.3, notch=False, 
+                       boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                       whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                       showfliers=False,
+                       medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+
+            # Scatter plot
+            palette_df_5 = ['#ee6100', 'g', 'b', 'y']
+            palette_df_15 = ['#ee6100', 'g', 'b', 'y']
+
+            for i, size in enumerate(train_sizes):
+                xs_df_5 = np.random.normal(positions_df_5[i], 0.04, len(df_5_boxplot_data[i]))
+                xs_df_15 = np.random.normal(positions_df_15[i], 0.04, len(df_15_boxplot_data[i]))
+
+                ax.scatter(xs_df_5, df_5_boxplot_data[i], alpha=0.2, color=palette_df_5[i], label='Prediction balls')
+                ax.scatter(xs_df_15, df_15_boxplot_data[i], alpha=0.2, color=palette_df_15[i], marker='^', label='Split-conformal')
+
+            sns.despine(bottom=True)  # Remove right and top axis lines
+            sns.set_style("whitegrid")
+
+            ax.set_xticks(range(len(train_sizes)))
+            ax.set_xticklabels([str(size) for size in train_sizes], fontsize=17)
+
+            if alpha_level == 0.01:
+                ax.set_ylim(0.825, 1.001)
+            elif alpha_level == 0.05:
+                ax.set_ylim(0.75, 1.001)
+            else:
+                ax.set_ylim(0.5, 1.001)
+
+            ax.set_xlabel('Training sample size', fontsize=17)
+            ax.set_ylabel('Coverage', fontsize=17)
+            ax.tick_params(labelsize=17)
+            ax.axhline(y=1-alpha_level, color='black', linestyle='dashed')
+            ax.grid(False)
+
+            # Custom legend
+            legend_handles = []
+            legend_handles.append(mlines.Line2D([], [], color='gray', marker='o', linestyle='none', markersize=10, label=r'$d = 5$'))
+            legend_handles.append(mlines.Line2D([], [], color='gray', marker='^', linestyle='none', markersize=10, label=r'$d = 15$'))
+
+            ax.legend(handles=legend_handles, loc='lower right', fontsize=13)
+            
+            fig_individual.tight_layout()
+            
+            # Save the individual plot
+            filename = output_dir / f'ai_df_5_15_II_coverage_{str(alpha_level)[2:]}.png'
+            fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=125, transparent=True)
+            plt.close(fig_individual)  # Close individual figure to free memory
+
     # LC plots - Create 1x3 subplot figure
     print(f"\n Log-Cholesky metric")
     fig, axes = plt.subplots(1, 3, figsize=(21, 7), facecolor="white")
@@ -2073,6 +2152,80 @@ def spd_type_ii_analysis(SPD_coverage_df, save_individual=True):
     plt.show()
     fig.tight_layout()
 
+    # Create individual LC plots for each alpha level
+    for alpha_idx, (df_5_data, df_15_data, alpha_level) in enumerate(zip(
+            [lc_ii_SPD_coverage_df_df_5_alpha_01, lc_ii_SPD_coverage_df_df_5_alpha_05, lc_ii_SPD_coverage_df_df_5_alpha_1], 
+            [lc_ii_SPD_coverage_df_df_15_alpha_01, lc_ii_SPD_coverage_df_df_15_alpha_05, lc_ii_SPD_coverage_df_df_15_alpha_1], 
+            [0.01, 0.05, 0.1]
+        )):
+            # Create individual figure
+            fig_individual, ax = plt.subplots(1, 1, figsize=(7, 7), facecolor="white")
+
+            # Extract data for each training size
+            train_sizes = [50, 100, 200, 500]
+            df_5_boxplot_data = [df_5_data[df_5_data['train_size'] == size]['lc_ii_cov'].values for size in train_sizes]
+            df_15_boxplot_data = [df_15_data[df_15_data['train_size'] == size]['lc_ii_cov'].values for size in train_sizes]
+
+            # Create boxplots with adjusted positions
+            positions_df_5 = np.array(range(len(train_sizes))) - 0.2
+            positions_df_15 = np.array(range(len(train_sizes))) + 0.2
+
+            ax.boxplot(df_5_boxplot_data, positions=positions_df_5, widths=0.3, notch=False, 
+                       boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                       whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                       showfliers=False,
+                       medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+                       
+            ax.boxplot(df_15_boxplot_data, positions=positions_df_15, widths=0.3, notch=False, 
+                       boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                       whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                       showfliers=False,
+                       medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+
+            # Scatter plot
+            palette_df_5 = ['#ee6100', 'g', 'b', 'y']
+            palette_df_15 = ['#ee6100', 'g', 'b', 'y']
+
+            for i, size in enumerate(train_sizes):
+                xs_df_5 = np.random.normal(positions_df_5[i], 0.04, len(df_5_boxplot_data[i]))
+                xs_df_15 = np.random.normal(positions_df_15[i], 0.04, len(df_15_boxplot_data[i]))
+
+                ax.scatter(xs_df_5, df_5_boxplot_data[i], alpha=0.2, color=palette_df_5[i], label='Prediction balls')
+                ax.scatter(xs_df_15, df_15_boxplot_data[i], alpha=0.2, color=palette_df_15[i], marker='^', label='Split-conformal')
+
+            sns.despine(bottom=True)  # Remove right and top axis lines
+            sns.set_style("whitegrid")
+
+            ax.set_xticks(range(len(train_sizes)))
+            ax.set_xticklabels([str(size) for size in train_sizes], fontsize=17)
+
+            if alpha_level == 0.01:
+                ax.set_ylim(0.825, 1.001)
+            elif alpha_level == 0.05:
+                ax.set_ylim(0.75, 1.001)
+            else:
+                ax.set_ylim(0.5, 1.001)
+
+            ax.set_xlabel('Training sample size', fontsize=17)
+            ax.set_ylabel('Coverage', fontsize=17)
+            ax.tick_params(labelsize=17)
+            ax.axhline(y=1-alpha_level, color='black', linestyle='dashed')
+            ax.grid(False)
+
+            # Custom legend
+            legend_handles = []
+            legend_handles.append(mlines.Line2D([], [], color='gray', marker='o', linestyle='none', markersize=10, label=r'$d = 5$'))
+            legend_handles.append(mlines.Line2D([], [], color='gray', marker='^', linestyle='none', markersize=10, label=r'$d = 15$'))
+
+            ax.legend(handles=legend_handles, loc='lower right', fontsize=13)
+            
+            fig_individual.tight_layout()
+            
+            # Save the individual plot
+            filename = output_dir / f'lc_df_5_15_II_coverage_{str(alpha_level)[2:]}.png'
+            fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=125, transparent=True)
+            plt.close(fig_individual)  # Close individual figure to free memory
+
     # LE plots - Create 1x3 subplot figure
     print(f"\n Log-Euclidean metric")
     fig, axes = plt.subplots(1, 3, figsize=(21, 7), facecolor="white")
@@ -2144,6 +2297,81 @@ def spd_type_ii_analysis(SPD_coverage_df, save_individual=True):
     
     plt.show()
     fig.tight_layout()
+
+    # Create individual LE plots for each alpha level
+    for alpha_idx, (df_5_data, df_15_data, alpha_level) in enumerate(zip(
+        [le_ii_SPD_coverage_df_df_5_alpha_01, le_ii_SPD_coverage_df_df_5_alpha_05, le_ii_SPD_coverage_df_df_5_alpha_1], 
+        [le_ii_SPD_coverage_df_df_15_alpha_01, le_ii_SPD_coverage_df_df_15_alpha_05, le_ii_SPD_coverage_df_df_15_alpha_1], 
+        [0.01, 0.05, 0.1]
+    )):
+        # Create individual figure
+        fig_individual, ax = plt.subplots(1, 1, figsize=(7, 7), facecolor="white")
+
+        # Extract data for each training size
+        train_sizes = [50, 100, 200, 500]
+        df_5_boxplot_data = [df_5_data[df_5_data['train_size'] == size]['le_ii_cov'].values for size in train_sizes]
+        df_15_boxplot_data = [df_15_data[df_15_data['train_size'] == size]['le_ii_cov'].values for size in train_sizes]
+
+        # Create boxplots with adjusted positions
+        positions_df_5 = np.array(range(len(train_sizes))) - 0.2
+        positions_df_15 = np.array(range(len(train_sizes))) + 0.2
+
+        ax.boxplot(df_5_boxplot_data, positions=positions_df_5, widths=0.3, notch=False, 
+                   boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                   whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                   showfliers=False,
+                   medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+                   
+        ax.boxplot(df_15_boxplot_data, positions=positions_df_15, widths=0.3, notch=False, 
+                   boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                   whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                   showfliers=False,
+                   medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+
+        # Scatter plot
+        palette_df_5 = ['#ee6100', 'g', 'b', 'y']
+        palette_df_15 = ['#ee6100', 'g', 'b', 'y']
+
+        for i, size in enumerate(train_sizes):
+            xs_df_5 = np.random.normal(positions_df_5[i], 0.04, len(df_5_boxplot_data[i]))
+            xs_df_15 = np.random.normal(positions_df_15[i], 0.04, len(df_15_boxplot_data[i]))
+
+            ax.scatter(xs_df_5, df_5_boxplot_data[i], alpha=0.2, color=palette_df_5[i], label='Prediction balls')
+            ax.scatter(xs_df_15, df_15_boxplot_data[i], alpha=0.2, color=palette_df_15[i], marker='^', label='Split-conformal')
+
+        sns.despine(bottom=True)  # Remove right and top axis lines
+        sns.set_style("whitegrid")
+
+        ax.set_xticks(range(len(train_sizes)))
+        ax.set_xticklabels([str(size) for size in train_sizes], fontsize=17)
+
+        if alpha_level == 0.01:
+            ax.set_ylim(0.825, 1.001)
+        elif alpha_level == 0.05:
+            ax.set_ylim(0.75, 1.001)
+        else:
+            ax.set_ylim(0.5, 1.001)
+
+        ax.set_xlabel('Training sample size', fontsize=17)
+        ax.set_ylabel('Coverage', fontsize=17)
+        ax.tick_params(labelsize=17)
+        ax.axhline(y=1-alpha_level, color='black', linestyle='dashed')
+        ax.grid(False)
+
+        # Custom legend
+        legend_handles = []
+        legend_handles.append(mlines.Line2D([], [], color='gray', marker='o', linestyle='none', markersize=10, label=r'$d = 5$'))
+        legend_handles.append(mlines.Line2D([], [], color='gray', marker='^', linestyle='none', markersize=10, label=r'$d = 15$'))
+
+        ax.legend(handles=legend_handles, loc='lower right', fontsize=13)
+        
+        fig_individual.tight_layout()
+        
+        # Save the individual plot
+
+        filename = output_dir / f'le_df_5_15_II_coverage_{str(alpha_level)[2:]}.png'
+        fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=125, transparent=True)
+        plt.close(fig_individual)  # Close individual figure to free memory
 
 # ================================
 # TYPE IV AND MISSING TYPE III ANALYSIS FUNCTIONS
@@ -2307,7 +2535,7 @@ def euclidean_type_iv_analysis(coverage_df, sigma_value='0.9', save_individual=T
                 
                 # Save the individual plot
                 filename = output_dir / f'euclidean_type_iv_coverage_sigma_{str(sigma).replace(".", "")}_alpha_{str(alpha_level)[2:]}.png'
-                fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=75, transparent=True)
+                fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=125, transparent=True)
                 plt.close(fig_individual)  # Close individual figure to free memory
 
     fig.tight_layout()
@@ -2901,6 +3129,229 @@ def spd_type_iv_analysis(SPD_coverage_df, save_individual=True):
     plt.show()
     fig.tight_layout()
 
+    # Save individual plots if requested
+    if save_individual:
+        output_dir = ROOT_DIR / "results_plots"
+        output_dir.mkdir(exist_ok=True)
+        
+        # Create individual AI plots for each alpha level
+        for alpha_idx, (df_5_data, df_15_data, alpha_level) in enumerate(zip(
+            [ai_iv_SPD_coverage_df_df_5_alpha_01, ai_iv_SPD_coverage_df_df_5_alpha_05, ai_iv_SPD_coverage_df_df_5_alpha_1], 
+            [ai_iv_SPD_coverage_df_df_15_alpha_01, ai_iv_SPD_coverage_df_df_15_alpha_05, ai_iv_SPD_coverage_df_df_15_alpha_1], 
+            [0.01, 0.05, 0.1]
+        )):
+            # Create individual figure
+            fig_individual, ax = plt.subplots(1, 1, figsize=(7, 7), facecolor="white")
+
+            # Extract data for each training size
+            train_sizes = [50, 100, 200, 500]
+            df_5_boxplot_data = [df_5_data[df_5_data['train_size'] == size]['ai_iv_cov'].values for size in train_sizes]
+            df_15_boxplot_data = [df_15_data[df_15_data['train_size'] == size]['ai_iv_cov'].values for size in train_sizes]
+
+            # Create boxplots with adjusted positions
+            positions_df_5 = np.array(range(len(train_sizes))) - 0.2
+            positions_df_15 = np.array(range(len(train_sizes))) + 0.2
+
+            ax.boxplot(df_5_boxplot_data, positions=positions_df_5, widths=0.3, notch=False, 
+                       boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                       whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                       showfliers=False,
+                       medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+                       
+            ax.boxplot(df_15_boxplot_data, positions=positions_df_15, widths=0.3, notch=False, 
+                       boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                       whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                       showfliers=False,
+                       medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+
+            # Scatter plot
+            palette_df_5 = ['#ee6100', 'g', 'b', 'y']
+            palette_df_15 = ['#ee6100', 'g', 'b', 'y']
+
+            for i, size in enumerate(train_sizes):
+                xs_df_5 = np.random.normal(positions_df_5[i], 0.04, len(df_5_boxplot_data[i]))
+                xs_df_15 = np.random.normal(positions_df_15[i], 0.04, len(df_15_boxplot_data[i]))
+
+                ax.scatter(xs_df_5, df_5_boxplot_data[i], alpha=0.2, color=palette_df_5[i], label='Prediction balls')
+                ax.scatter(xs_df_15, df_15_boxplot_data[i], alpha=0.2, color=palette_df_15[i], marker='^', label='Split-conformal')
+
+            sns.despine(bottom=True)  # Remove right and top axis lines
+            sns.set_style("whitegrid")
+            ax.set_xticks(range(len(train_sizes)))
+            ax.set_xticklabels([str(size) for size in train_sizes], fontsize=17)
+
+            if alpha_level == 0.01:
+                ax.set_ylim(0.86, 1.001)
+            elif alpha_level == 0.05:
+                ax.set_ylim(0.75, 1.001)
+            else:
+                ax.set_ylim(0.5, 1)
+
+            ax.set_xlabel('Training sample size', fontsize=17)
+            ax.set_ylabel('Coverage', fontsize=17)
+            ax.tick_params(labelsize=17)
+            ax.axhline(y=1-alpha_level, color='black', linestyle='dashed')
+            ax.grid(False)
+
+            # Custom legend
+            legend_handles = []
+            legend_handles.append(mlines.Line2D([], [], color='gray', marker='o', linestyle='none', markersize=10, label=r'$d = 5$'))
+            legend_handles.append(mlines.Line2D([], [], color='gray', marker='^', linestyle='none', markersize=10, label=r'$d = 15$'))
+
+            ax.legend(handles=legend_handles, loc='lower right', fontsize=13)
+            
+            fig_individual.tight_layout()
+            
+            # Save the individual plot
+            filename = output_dir / f'ai_df_5_15_IV_coverage_{str(alpha_level)[2:]}.png'
+            fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=125, transparent=True)
+            plt.close(fig_individual)  # Close individual figure to free memory
+
+    # LC plots - Create 1x3 subplot figure
+    print(f"\n Log-Cholesky metric")
+    fig, axes = plt.subplots(1, 3, figsize=(21, 7), facecolor="white")
+    
+    for alpha_idx, (df_5_data, df_15_data, alpha_level) in enumerate(zip(
+        [lc_iv_SPD_coverage_df_df_5_alpha_01, lc_iv_SPD_coverage_df_df_5_alpha_05, lc_iv_SPD_coverage_df_df_5_alpha_1], 
+        [lc_iv_SPD_coverage_df_df_15_alpha_01, lc_iv_SPD_coverage_df_df_15_alpha_05, lc_iv_SPD_coverage_df_df_15_alpha_1], 
+        [0.01, 0.05, 0.1]
+    )):
+        ax = axes[alpha_idx]
+
+        # Extract data for each training size
+        train_sizes = [50, 100, 200, 500]
+        df_5_boxplot_data = [df_5_data[df_5_data['train_size'] == size]['lc_iv_cov'].values for size in train_sizes]
+        df_15_boxplot_data = [df_15_data[df_15_data['train_size'] == size]['lc_iv_cov'].values for size in train_sizes]
+
+        # Create boxplots with adjusted positions
+        positions_df_5 = np.array(range(len(train_sizes))) - 0.2
+        positions_df_15 = np.array(range(len(train_sizes))) + 0.2
+
+        ax.boxplot(df_5_boxplot_data, positions=positions_df_5, widths=0.3, notch=False, 
+                   boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                   whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                   showfliers=False,
+                   medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+                   
+        ax.boxplot(df_15_boxplot_data, positions=positions_df_15, widths=0.3, notch=False, 
+                   boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                   whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                   showfliers=False,
+                   medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+
+        # Scatter plot
+        palette_df_5 = ['#ee6100', 'g', 'b', 'y']
+        palette_df_15 = ['#ee6100', 'g', 'b', 'y']
+
+        for i, size in enumerate(train_sizes):
+            xs_df_5 = np.random.normal(positions_df_5[i], 0.04, len(df_5_boxplot_data[i]))
+            xs_df_15 = np.random.normal(positions_df_15[i], 0.04, len(df_15_boxplot_data[i]))
+
+            ax.scatter(xs_df_5, df_5_boxplot_data[i], alpha=0.2, color=palette_df_5[i], label='Prediction balls')
+            ax.scatter(xs_df_15, df_15_boxplot_data[i], alpha=0.2, color=palette_df_15[i], marker='^', label='Split-conformal')
+
+        sns.despine(bottom=True)  # Remove right and top axis lines
+        sns.set_style("whitegrid")
+        ax.set_xticks(range(len(train_sizes)))
+        ax.set_xticklabels([str(size) for size in train_sizes], fontsize=17)
+
+        if alpha_level == 0.01:
+            ax.set_ylim(0.86, 1.001)
+        elif alpha_level == 0.05:
+            ax.set_ylim(0.75, 1.001)
+        else:
+            ax.set_ylim(0.5, 1)
+
+        ax.set_xlabel('Training sample size', fontsize=17)
+        ax.set_ylabel('Coverage', fontsize=17)
+        ax.tick_params(labelsize=17)
+        ax.axhline(y=1-alpha_level, color='black', linestyle='dashed')
+        ax.grid(False)
+
+        # Custom legend
+        legend_handles = []
+        legend_handles.append(mlines.Line2D([], [], color='gray', marker='o', linestyle='none', markersize=10, label=r'$d = 5$'))
+        legend_handles.append(mlines.Line2D([], [], color='gray', marker='^', linestyle='none', markersize=10, label=r'$d = 15$'))
+
+        ax.legend(handles=legend_handles, loc='lower right', fontsize=13)
+    
+    plt.show()
+    fig.tight_layout()
+
+    # Create individual LC plots for each alpha level
+    for alpha_idx, (df_5_data, df_15_data, alpha_level) in enumerate(zip(
+        [lc_iv_SPD_coverage_df_df_5_alpha_01, lc_iv_SPD_coverage_df_df_5_alpha_05, lc_iv_SPD_coverage_df_df_5_alpha_1], 
+        [lc_iv_SPD_coverage_df_df_15_alpha_01, lc_iv_SPD_coverage_df_df_15_alpha_05, lc_iv_SPD_coverage_df_df_15_alpha_1], 
+        [0.01, 0.05, 0.1]
+    )):
+        # Create individual figure
+        fig_individual, ax = plt.subplots(1, 1, figsize=(7, 7), facecolor="white")
+
+        # Extract data for each training size
+        train_sizes = [50, 100, 200, 500]
+        df_5_boxplot_data = [df_5_data[df_5_data['train_size'] == size]['lc_iv_cov'].values for size in train_sizes]
+        df_15_boxplot_data = [df_15_data[df_15_data['train_size'] == size]['lc_iv_cov'].values for size in train_sizes]
+
+        # Create boxplots with adjusted positions
+        positions_df_5 = np.array(range(len(train_sizes))) - 0.2
+        positions_df_15 = np.array(range(len(train_sizes))) + 0.2
+
+        ax.boxplot(df_5_boxplot_data, positions=positions_df_5, widths=0.3, notch=False, 
+                   boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                   whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                   showfliers=False,
+                   medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+                   
+        ax.boxplot(df_15_boxplot_data, positions=positions_df_15, widths=0.3, notch=False, 
+                   boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                   whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                   showfliers=False,
+                   medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+
+        # Scatter plot
+        palette_df_5 = ['#ee6100', 'g', 'b', 'y']
+        palette_df_15 = ['#ee6100', 'g', 'b', 'y']
+
+        for i, size in enumerate(train_sizes):
+            xs_df_5 = np.random.normal(positions_df_5[i], 0.04, len(df_5_boxplot_data[i]))
+            xs_df_15 = np.random.normal(positions_df_15[i], 0.04, len(df_15_boxplot_data[i]))
+
+            ax.scatter(xs_df_5, df_5_boxplot_data[i], alpha=0.2, color=palette_df_5[i], label='Prediction balls')
+            ax.scatter(xs_df_15, df_15_boxplot_data[i], alpha=0.2, color=palette_df_15[i], marker='^', label='Split-conformal')
+
+        sns.despine(bottom=True)  # Remove right and top axis lines
+        sns.set_style("whitegrid")
+
+        ax.set_xticks(range(len(train_sizes)))
+        ax.set_xticklabels([str(size) for size in train_sizes], fontsize=17)
+
+        if alpha_level == 0.01:
+            ax.set_ylim(0.86, 1.001)
+        elif alpha_level == 0.05:
+            ax.set_ylim(0.75, 1.001)
+        else:
+            ax.set_ylim(0.5, 1)
+
+        ax.set_xlabel('Training sample size', fontsize=17)
+        ax.set_ylabel('Coverage', fontsize=17)
+        ax.tick_params(labelsize=17)
+        ax.axhline(y=1-alpha_level, color='black', linestyle='dashed')
+        ax.grid(False)
+
+        # Custom legend
+        legend_handles = []
+        legend_handles.append(mlines.Line2D([], [], color='gray', marker='o', linestyle='none', markersize=10, label=r'$d = 5$'))
+        legend_handles.append(mlines.Line2D([], [], color='gray', marker='^', linestyle='none', markersize=10, label=r'$d = 15$'))
+
+        ax.legend(handles=legend_handles, loc='lower right', fontsize=13)
+        
+        fig_individual.tight_layout()
+        
+        # Save the individual plot
+        filename = output_dir / f'lc_df_5_15_IV_coverage_{str(alpha_level)[2:]}.png'
+        fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=125, transparent=True)
+        plt.close(fig_individual)  # Close individual figure to free memory
+
     # LE plots - Create 1x3 subplot figure
     print(f"\n Log-Euclidean metric")
     fig, axes = plt.subplots(1, 3, figsize=(21, 7), facecolor="white")
@@ -2971,6 +3422,79 @@ def spd_type_iv_analysis(SPD_coverage_df, save_individual=True):
     
     plt.show()
     fig.tight_layout()
+
+    # Create individual LE plots for each alpha level
+    for alpha_idx, (df_5_data, df_15_data, alpha_level) in enumerate(zip(
+        [le_iv_SPD_coverage_df_df_5_alpha_01, le_iv_SPD_coverage_df_df_5_alpha_05, le_iv_SPD_coverage_df_df_5_alpha_1], 
+        [le_iv_SPD_coverage_df_df_15_alpha_01, le_iv_SPD_coverage_df_df_15_alpha_05, le_iv_SPD_coverage_df_df_15_alpha_1], 
+        [0.01, 0.05, 0.1]
+    )):
+        # Create individual figure
+        fig_individual, ax = plt.subplots(1, 1, figsize=(7, 7), facecolor="white")
+
+        # Extract data for each training size
+        train_sizes = [50, 100, 200, 500]
+        df_5_boxplot_data = [df_5_data[df_5_data['train_size'] == size]['le_iv_cov'].values for size in train_sizes]
+        df_15_boxplot_data = [df_15_data[df_15_data['train_size'] == size]['le_iv_cov'].values for size in train_sizes]
+
+        # Create boxplots with adjusted positions
+        positions_df_5 = np.array(range(len(train_sizes))) - 0.2
+        positions_df_15 = np.array(range(len(train_sizes))) + 0.2
+
+        ax.boxplot(df_5_boxplot_data, positions=positions_df_5, widths=0.3, notch=False, 
+                   boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                   whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                   showfliers=False,
+                   medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+                   
+        ax.boxplot(df_15_boxplot_data, positions=positions_df_15, widths=0.3, notch=False, 
+                   boxprops=dict(color='#000000', linestyle='-', linewidth=1.5), 
+                   whiskerprops=dict(color='#000000'), capprops=dict(color='#000000'), 
+                   showfliers=False,
+                   medianprops=dict(linewidth=1.5, linestyle='-', color='#ff0808'), showmeans=False)
+
+        # Scatter plot
+        palette_df_5 = ['#ee6100', 'g', 'b', 'y']
+        palette_df_15 = ['#ee6100', 'g', 'b', 'y']
+
+        for i, size in enumerate(train_sizes):
+            xs_df_5 = np.random.normal(positions_df_5[i], 0.04, len(df_5_boxplot_data[i]))
+            xs_df_15 = np.random.normal(positions_df_15[i], 0.04, len(df_15_boxplot_data[i]))
+
+            ax.scatter(xs_df_5, df_5_boxplot_data[i], alpha=0.2, color=palette_df_5[i], label='Prediction balls')
+            ax.scatter(xs_df_15, df_15_boxplot_data[i], alpha=0.2, color=palette_df_15[i], marker='^', label='Split-conformal')
+
+        sns.despine(bottom=True)  # Remove right and top axis lines
+        sns.set_style("whitegrid")
+        ax.set_xticks(range(len(train_sizes)))
+        ax.set_xticklabels([str(size) for size in train_sizes], fontsize=17)
+
+        if alpha_level == 0.01:
+            ax.set_ylim(0.86, 1.001)
+        elif alpha_level == 0.05:
+            ax.set_ylim(0.75, 1.001)
+        else:
+            ax.set_ylim(0.5, 1)
+
+        ax.set_xlabel('Training sample size', fontsize=17)
+        ax.set_ylabel('Coverage', fontsize=17)
+        ax.tick_params(labelsize=17)
+        ax.axhline(y=1-alpha_level, color='black', linestyle='dashed')
+        ax.grid(False)
+
+        # Custom legend
+        legend_handles = []
+        legend_handles.append(mlines.Line2D([], [], color='gray', marker='o', linestyle='none', markersize=10, label=r'$d = 5$'))
+        legend_handles.append(mlines.Line2D([], [], color='gray', marker='^', linestyle='none', markersize=10, label=r'$d = 15$'))
+
+        ax.legend(handles=legend_handles, loc='lower right', fontsize=13)
+        
+        fig_individual.tight_layout()
+        
+        # Save the individual plot
+        filename = output_dir / f'le_df_5_15_IV_coverage_{str(alpha_level)[2:]}.png'
+        fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=125, transparent=True)
+        plt.close(fig_individual)  # Close individual figure to free memory
 
 def spd_radius_analysis(SPD_coverage_df, save_individual=True):
     """Create radius boxplots for SPD data for all three metrics."""
@@ -3121,7 +3645,7 @@ def spd_radius_analysis(SPD_coverage_df, save_individual=True):
                 
                 # Save the individual plot
                 filename = output_dir / f'{metric}_SPD_radius_vs_df_{alpha_level:.2f}.png'
-                fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=75, transparent=True)
+                fig_individual.savefig(filename, bbox_inches='tight', format='png', dpi=125, transparent=True)
                 plt.close(fig_individual)  # Close individual figure to free memory
 
 # ================================
@@ -4572,7 +5096,7 @@ def simulate_frechet_loss(d_array, Sigma_array, matrices, n_samples=10000, plot_
     else:
         filename = "frechet_mean_spd_analysis.png"
     
-    fig.savefig(output_dir / filename, bbox_inches='tight', dpi=300)
+    fig.savefig(output_dir / filename, bbox_inches='tight', dpi=75)
     plt.show()
     return fig
 
@@ -5588,7 +6112,7 @@ def ratio_compare_volume_dimension(save_path):
             ax2.set_ylim(-150, 2600)  # Adjust for dimensions 5,10
         
         filename = os.path.join(save_path, f'relative_error_sc_pb_volume_{str(alpha_level)[2:]}.png')
-        fig.savefig(filename, bbox_inches='tight', format='png', dpi = 75, transparent=True)
+        fig.savefig(filename, bbox_inches='tight', format='png', dpi = 125, transparent=True)
         plt.show()
 
 def process_radius_volume_data():
