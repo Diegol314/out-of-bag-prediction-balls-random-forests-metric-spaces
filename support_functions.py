@@ -6109,7 +6109,7 @@ def ratio_compare_volume_dimension(save_path):
             ax2.set_ylim(-100, 2000)  # Adjust for dimensions 5,10
         else:  # alpha_level == 0.1
             ax1.set_ylim(-50, 100)    # Adjust for dimension 1
-            ax2.set_ylim(-150, 2600)  # Adjust for dimensions 5,10
+            ax2.set_ylim(-150, 3000)  # Adjust for dimensions 5,10
         
         filename = os.path.join(save_path, f'relative_error_sc_pb_volume_{str(alpha_level)[2:]}.png')
         fig.savefig(filename, bbox_inches='tight', format='png', dpi = 125, transparent=True)
