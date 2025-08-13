@@ -10,9 +10,6 @@ from scipy.stats import beta
 
 np.random.seed(1000)
 
-save_folder = os.path.join(os.getcwd(), 'simulations_SPD', 'type_ii_data')
-os.makedirs(save_folder, exist_ok=True)
-
 def Sigma_t(t_array, Sigma_array):
     """Provides an array with the matrices given by a regression model that interpolates between four matrices."""  
     """In [0,1], the regression starts with Sigma_1 and then goes to Sigma_2 and Sigma_3."""
@@ -61,7 +58,6 @@ for sample_size in sample_sizes:
                                            t = ts,  
                                            df = df)
         
-        print(sample)
         filename = os.path.join(save_folder, f'SPD_type_iii_N{sample_size}_df{df}.pkl')
         with open(filename, 'wb') as f:
             pickle.dump(sample, f)
