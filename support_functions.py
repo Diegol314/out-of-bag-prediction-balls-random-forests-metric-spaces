@@ -86,7 +86,7 @@ def calculate_type_i_coverage(coverage_df, sample_sizes, sigma_values, B=500, ra
     kappa_values : list
         List of kappa values to analyze
     B : int
-        Number of bootstrap replicates (default: 1000)
+        Number of bootstrap replicates (default: 500)
     
     Returns:
     --------
@@ -229,7 +229,7 @@ def calculate_type_iii_coverage(coverage_df, sample_sizes, sigma_values, B=500, 
     kappa_values : list
         List of kappa values to analyze
     B : int
-        Number of bootstrap replicates (default: 1000)
+        Number of bootstrap replicates (default: 500)
     
     Returns:
     --------
@@ -1603,7 +1603,7 @@ def calculate_type_i_coverage_spd(coverage_df, sample_sizes, df_values, B=500, r
     df_values : list
         List of df values to analyze
     B : int
-        Number of bootstrap replicates (default: 1000)
+        Number of bootstrap replicates (default: 500)
     
     Returns:
     --------
@@ -3916,8 +3916,8 @@ def create_spd_interpolation_plot():
     # Save the plot
     output_dir = ROOT_DIR / 'results_plots'
     output_dir.mkdir(exist_ok=True)
-    filename = output_dir / 'SPD_interpolation_plot.png'
-    fig.savefig(filename, bbox_inches='tight', format='png', transparent=True)
+    filename = output_dir / 'SPD_interpolation_plot.pdf'
+    fig.savefig(filename, bbox_inches='tight', format='pdf', transparent=True)
     plt.show()
 
 def create_sphere_prediction_balls():
@@ -6294,9 +6294,9 @@ def generate_statistical_latex_table(combined_results):
             exp_str = f"{p_val:.0e}".replace('e-0', r' \\cdot 10^{-').replace('e-', r' \\cdot 10^{-') + '}$'
             p_mse_row += f" & ${exp_str}"
         elif p_val >= 1.0:
-            p_mse_row += " & $1.0$"
+            p_mse_row += " & $1.00$"
         else:
-            p_mse_row += f" & ${p_val:.1f}$"
+            p_mse_row += f" & ${p_val:.2f}$"
     
     # Sphere column
     p_mse_row += " & ---"
@@ -6304,14 +6304,14 @@ def generate_statistical_latex_table(combined_results):
     for i in prolate_indices:
         p_val = combined_results['p_adjusted_mse'][i]
         if p_val < 0.001:
-            p_mse_row += " & $0.0$"
+            p_mse_row += " & $0.00$"
         elif p_val < 0.01:
             exp_str = f"{p_val:.0e}".replace('e-0', r' \\cdot 10^{-').replace('e-', r' \\cdot 10^{-') + '}$'
             p_mse_row += f" & ${exp_str}"
         elif p_val >= 1.0:
-            p_mse_row += " & $1.0$"
+            p_mse_row += " & $1.00$"
         else:
-            p_mse_row += f" & ${p_val:.1f}$"
+            p_mse_row += f" & ${p_val:.2f}$"
     
     print(p_mse_row + " \\\\")
     
@@ -6321,14 +6321,14 @@ def generate_statistical_latex_table(combined_results):
     for i in oblate_indices:
         p_val = combined_results['p_adjusted_area'][i]
         if p_val < 0.001:
-            p_area_row += " & $0.0$"
+            p_area_row += " & $0.00$"
         elif p_val < 0.01:
             exp_str = f"{p_val:.0e}".replace('e-0', r' \\cdot 10^{-').replace('e-', r' \\cdot 10^{-') + '}$'
             p_area_row += f" & ${exp_str}"
         elif p_val >= 1.0:
-            p_area_row += " & $1.0$"
+            p_area_row += " & $1.00$"
         else:
-            p_area_row += f" & ${p_val:.1f}$"
+            p_area_row += f" & ${p_val:.2f}$"
     
     # Sphere column
     p_area_row += " & ---"
@@ -6336,14 +6336,14 @@ def generate_statistical_latex_table(combined_results):
     for i in prolate_indices:
         p_val = combined_results['p_adjusted_area'][i]
         if p_val < 0.001:
-            p_area_row += " & $0.0$"
+            p_area_row += " & $0.00$"
         elif p_val < 0.01:
             exp_str = f"{p_val:.0e}".replace('e-0', r' \\cdot 10^{-').replace('e-', r' \\cdot 10^{-') + '}$'
             p_area_row += f" & ${exp_str}"
         elif p_val >= 1.0:
-            p_area_row += " & $1.0$"
+            p_area_row += " & $1.00$"
         else:
-            p_area_row += f" & ${p_val:.1f}$"
+            p_area_row += f" & ${p_val:.2f}$"
     
     print(p_area_row + " \\\\")
     
