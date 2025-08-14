@@ -24,7 +24,7 @@ Below is a simple scheme of the distribution of the library:
 ├── main_results.ipynb          # Main notebook reproducing all paper results.
 ├── support_functions.py        # Support functions for main_results.ipynb.
 ├── pyfrechet/                  # Modification and extension of pyfrechet to implement random forests in metric spaces.
-├── simulations_*/              # Raw simulation data for each metric space.
+├── simulations_*/              # Raw simulation data and scripts for each metric space.
 └── requirements.txt            # Python (3.9.9) dependencies.
 ```
 
